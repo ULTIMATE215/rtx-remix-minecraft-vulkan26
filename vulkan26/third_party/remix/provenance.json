@@ -1,0 +1,82 @@
+{
+  "repository": "https://github.com/NVIDIAGameWorks/dxvk-remix",
+  "commit": "bbd74a1287c2fa887f4a2b0e46a1530177890b64",
+  "license": "MIT",
+  "sources": [
+    {
+      "path": "src/dxvk/shaders/rtx/utility/math.slangh",
+      "sha256": "d3802e0ec7b10ac46af43860abbd3b3157dc2991fb0eeba4d262dee3bae325d8",
+      "destination": "assets/remix-vulkan/shaders/remix/math.glsl",
+      "functions": [
+        "calcOrthonormalBasis"
+      ]
+    },
+    {
+      "path": "src/dxvk/shaders/rtx/utility/sampling.slangh",
+      "sha256": "7f6a566416550b1cf74a269d8507b39b3e8623e3e3b10c43b7cf564e1e284a3b",
+      "destination": "assets/remix-vulkan/shaders/remix/sampling.glsl",
+      "functions": [
+        "getCosineHemisphereSolidAnglePdf",
+        "getUniformConeSolidAnglePdf",
+        "calcCosineHemisphereDirectionSample",
+        "calcUniformConeDirectionSample",
+        "calcGGXVisibleNormalDistributionSphericalCapSample"
+      ]
+    },
+    {
+      "path": "src/dxvk/shaders/rtx/utility/brdf.slangh",
+      "sha256": "0f17cfdca0c75896d895c143ef6c112787b42087dc8c967efe7c9aef0563e002",
+      "destination": "assets/remix-vulkan/shaders/remix/brdf.glsl",
+      "functions": [
+        "calcBaseReflectivity",
+        "perceptualRoughnessToRoughness",
+        "evalHammonDiffuse",
+        "evalOpaqueSchlickFresnel",
+        "evalGGXNormalDistributionIsotropic",
+        "evalGGXShadowing"
+      ]
+    },
+    {
+      "path": "src/dxvk/shaders/rtx/concept/ray/ray_utilities.h",
+      "sha256": "43aa6f4fc35921b72682e29522b9d6330d51afddc43aa9a86ef5119f3612bad4",
+      "destination": "assets/remix-vulkan/shaders/remix/ray_utilities.glsl",
+      "functions": [
+        "calculatePositionError",
+        "calculateRayOffset"
+      ]
+    },
+    {
+      "path": "src/dxvk/shaders/rtx/algorithm/nee_cache_light.slangh",
+      "sha256": "1c8d4bc11fbe13ba50c65bceef4e0c1f7f4c5ad9630194f8c8366987bb11b9a6",
+      "destination": "assets/remix-vulkan/shaders/remix/light_sampling.glsl",
+      "functions": [
+        "uvToBarycentrics",
+        "calculateLightSamplingSolidAnglePDF"
+      ]
+    },
+    {
+      "path": "src/dxvk/shaders/rtx/concept/surface/surface_interaction.slangh",
+      "sha256": "3970910044dc7fd8ca40830ee13c03b58eba166991f0dbfd52a394e383bdee97",
+      "destination": "assets/remix-vulkan/shaders/remix/surface_motion.glsl",
+      "functions": [
+        "surfaceInteractionCreate"
+      ],
+      "selection": "Rigid motion branch, excluding skinned vertex history",
+      "adapted_functions": [
+        "calculateRigidMotion"
+      ]
+    }
+  ],
+  "adaptations": [
+    "Selected standalone float32 functions; retained upstream copyright and permission notices.",
+    "Expanded float32 math helper macros and material constants.",
+    "Removed Slang default arguments; GLSL callers pass k explicitly.",
+    "Extracted the two NEECacheUtils triangle sampling helpers as standalone GLSL functions, without the NEE cache.",
+    "The solid-angle PDF helper accepts selection probability / triangle area, and guards zero-distance and non-finite connections.",
+    "Extracted the rigid motion branch of surfaceInteractionCreate into calculateRigidMotion; expanded interpolation and replaced Slang mul with GLSL multiplication. Previous transforms and current hits use their respective camera origins for Minecraft world-border precision; no skinned-vertex history is assumed.",
+    "Frame-history invalidation follows rtx_context.cpp / NRDContext: view discontinuities reset globally; ordinary scene, light and entity updates use per-pixel rejection. The temporal and a-trous filter remains this module’s implementation, not NRD.",
+    "The module uses its own global area/power-weighted alias table and balance MIS against its diffuse/GGX mixture; the final surface has no competing BSDF sample.",
+    "Minecraft scene layout, BVH traversal, integration, temporal filtering and Vulkan host code are implemented in this module.",
+    "This is a port of the listed shading functions, not the complete Remix renderer, RTXDI, NRC or DLSS."
+  ]
+}

@@ -1,0 +1,99 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Build Vulkan26 JAR
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Windows architectures to include in the complete JAR
+        type: choice
+        required: true
+        default: win64
+        options:
+          - win64
+          - arm64
+          - all
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ inputs.architecture }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      VULKAN26_ARCH: ${{ inputs.architecture }}
+      ORG_GRADLE_PROJECT_sourceRevision: ${{ github.sha }}
+      ORG_GRADLE_PROJECT_sourceBranch: ${{ github.ref_name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          architecture: x64
+
+      - name: Prepare MSVC
+        run: .\.github\scripts\setup-vulkan26-msvc.ps1 -Architecture $env:VULKAN26_ARCH
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build, test, and verify the complete JAR
+        working-directory: vulkan26
+        env:
+          PM_PACKAGES_ROOT: ${{ runner.temp }}/vulkan26-packman
+        run: |
+          $gradleArguments = @('--no-daemon', '--stacktrace', '--console=plain', 'package')
+          switch ($env:VULKAN26_ARCH) {
+              'win64' { $gradleArguments += '-Parch=win64' }
+              'arm64' { $gradleArguments += '-Parch=arm64' }
+              'all' { } # Omitting -Parch bundles both architectures.
+              default { throw "Unsupported architecture: $env:VULKAN26_ARCH" }
+          }
+          & .\gradlew.bat @gradleArguments
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Generate SHA-256 checksum
+        working-directory: vulkan26
+        run: |
+          $packageJars = @(Get-ChildItem -Path 'build/distributions/*.jar' -File)
+          if ($packageJars.Count -ne 1) {
+              throw "Expected one verified distribution JAR; found $($packageJars.Count)."
+          }
+          $packageJar = $packageJars[0]
+          $checksum = (Get-FileHash -LiteralPath $packageJar.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  $($packageJar.Name)" | Set-Content -LiteralPath "$($packageJar.FullName).sha256" -Encoding ascii
+
+      - name: Upload complete JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulkan26-${{ inputs.architecture }}-${{ github.run_number }}
+          path: |
+            vulkan26/build/distributions/*.jar
+            vulkan26/build/distributions/*.jar.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload JVM test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vulkan26-tests-${{ inputs.architecture }}-${{ github.run_number }}
+          path: |
+            vulkan26/build/reports/tests/
+            vulkan26/build/test-results/test/
+          if-no-files-found: warn
+          retention-days: 14

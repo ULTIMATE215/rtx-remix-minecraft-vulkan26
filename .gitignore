@@ -1,0 +1,22 @@
+# Machine-local credentials and editor/agent state
+/.agents/
+/.aws/
+/.codex/
+/.cursor/
+/.idea/
+/.vscode/
+
+# Root-project build outputs and staged runtime (keep packaging/licenses tracked)
+/.gradle/
+/build/
+/run/
+/run-prism/
+/remix-runtime/
+
+# Local Python caches and diagnostic output
+__pycache__/
+.venv/
+*.log
+*.log.gz
+hs_err_pid*
+/屏幕截图 *.png

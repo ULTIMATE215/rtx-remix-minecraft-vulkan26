@@ -1,0 +1,274 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.nvidia.rtxremix.minecraft.logic;
+
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.IntTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.level.storage.SavedDataStorage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * World-save owner for zones authored with {@code /rtx zone define} in an
+ * integrated single-player server. The renderer consumes a copied projection
+ * in {@link ZoneRegistry}; it never reads this server-thread state directly.
+ *
+ * <p>The state is attached to the server's global saved-data storage, so all
+ * definitions live in {@code data/minecraft/rtx_remix_zones.dat}. The legacy
+ * {@code data/rtx_remix_zones.dat} is imported when that file is absent. A zone
+ * remains global to the save rather than scoped to a dimension.</p>
+ */
+public final class ZonePersistentState extends SavedData {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ZonePersistentState.class);
+    private static final String DATA_ID = "rtx_remix_zones";
+    private static final int SCHEMA_VERSION = 1;
+
+    private static final String VERSION_KEY = "version";
+    private static final String ZONES_KEY = "zones";
+    private static final String NAME_KEY = "name";
+    private static final String CHANNEL_KEY = "channel";
+    private static final String SHAPE_KEY = "shape";
+    private static final String SPHERE_SHAPE = "sphere";
+    private static final String BOX_SHAPE = "box";
+
+    static final SavedDataType<ZonePersistentState> TYPE =
+            new SavedDataType<>(Identifier.withDefaultNamespace(DATA_ID), ZonePersistentState::new,
+                    CompoundTag.CODEC.xmap(nbt -> fromNbt(nbt, null),
+                            state -> state.writeNbt(new CompoundTag(), null)),
+                    DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
+
+    private final Map<String, ZoneDefinition> zonesByName = new HashMap<>();
+    private final boolean writable;
+
+    ZonePersistentState() {
+        this(true);
+    }
+
+    private ZonePersistentState(boolean writable) {
+        this.writable = writable;
+    }
+
+    /**
+     * Gets the state attached to this integrated server's world save, creating
+     * it when absent. Server thread only.
+     *
+     * <p>Use this only on a path that is about to store a definition.
+     * Read-only callers must use {@link #getIfPresent(MinecraftServer)} so a
+     * world that never uses {@code /rtx zone define} is not given a state
+     * object it does not need.</p>
+     */
+    public static ZonePersistentState getOrCreate(MinecraftServer server) {
+        return storage(server).computeIfAbsent(TYPE);
+    }
+
+    /**
+     * The saved state for this world, or null when the world has none.
+     *
+     * <p>{@code rtx_remix_zones.dat} is optional: a map can define its zones
+     * entirely with command blocks, which are stored as blocks in the region
+     * files and never touch this state. Reading through the nullable lookup
+     * keeps that structural rather than incidental. Minecraft would not write
+     * an un-dirtied state either way, but this way an unused world is not
+     * handed a state object at all, and nothing about the published world
+     * depends on that behavior staying as it is.</p>
+     */
+    public static ZonePersistentState getIfPresent(MinecraftServer server) {
+        return storage(server).get(TYPE);
+    }
+
+    private static SavedDataStorage storage(MinecraftServer server) {
+        // Import before get() can cache an absent state. In 26.2 the overworld's
+        // storage is dimension-local; zone definitions belong to the whole save.
+        migrateLegacyFile(server.getWorldPath(LevelResource.DATA));
+        return server.getDataStorage();
+    }
+
+    /** Vanilla's file fixes move only known vanilla .dat files, leaving this one in place. */
+    static void migrateLegacyFile(Path dataDirectory) {
+        Path legacy = dataDirectory.resolve(DATA_ID + ".dat");
+        Path target = TYPE.id().withSuffix(".dat").resolveAgainst(dataDirectory);
+        if (Files.exists(target) || Files.notExists(legacy)) {
+            return;
+        }
+        try {
+            if (!Files.isRegularFile(legacy)) {
+                throw new IOException("Saved zones are not a readable file: " + legacy);
+            }
+            Files.createDirectories(target.getParent());
+            Path staged = Files.createTempFile(target.getParent(), ".rtx-remix-zones-", ".tmp");
+            try {
+                Files.copy(legacy, staged, StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    // Same-directory publication without replacement. ATOMIC_MOVE
+                    // may replace an existing destination even without REPLACE_EXISTING.
+                    Files.move(staged, target);
+                } catch (FileAlreadyExistsException alreadyPresent) {
+                    return;
+                }
+            } finally {
+                Files.deleteIfExists(staged);
+            }
+            LOGGER.info("Imported saved RTX Remix zones from {} to {}; retained the legacy file", legacy, target);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot import saved RTX Remix zones from " + legacy + " to " + target, e);
+        }
+    }
+
+    /** Immutable, name-sorted copy safe to publish to the client/render registry. */
+    public Collection<ZoneDefinition> snapshot() {
+        ArrayList<ZoneDefinition> zones = new ArrayList<>(zonesByName.values());
+        zones.sort(Comparator.comparing(ZoneDefinition::name));
+        return List.copyOf(zones);
+    }
+
+    /** Adds or replaces a definition and dirties the save only for an effective change. */
+    public boolean put(ZoneDefinition zone) {
+        requireWritable();
+        Objects.requireNonNull(zone, "zone");
+        ZoneDefinition previous = zonesByName.get(zone.name());
+        if (zone.equals(previous)) {
+            return false;
+        }
+        zonesByName.put(zone.name(), zone);
+        setDirty();
+        return true;
+    }
+
+    /** Removes a saved definition and dirties the save only when it existed. */
+    public boolean remove(String name) {
+        requireWritable();
+        if (zonesByName.remove(name) == null) {
+            return false;
+        }
+        setDirty();
+        return true;
+    }
+
+    public CompoundTag writeNbt(CompoundTag nbt, HolderLookup.Provider registries) {
+        nbt.putInt(VERSION_KEY, SCHEMA_VERSION);
+        ListTag zones = new ListTag();
+        for (ZoneDefinition zone : snapshot()) {
+            zones.add(writeZone(zone));
+        }
+        nbt.put(ZONES_KEY, zones);
+        return nbt;
+    }
+
+    static ZonePersistentState fromNbt(CompoundTag nbt, HolderLookup.Provider registries) {
+        if (!(nbt.get(VERSION_KEY) instanceof IntTag)) {
+            LOGGER.warn("Ignoring RTX Remix zone state without a schema version");
+            return new ZonePersistentState(false);
+        }
+        int version = nbt.getIntOr(VERSION_KEY, -1);
+        if (version != SCHEMA_VERSION) {
+            LOGGER.warn("Ignoring RTX Remix zone state schema version {} (expected {})",
+                    version, SCHEMA_VERSION);
+            return new ZonePersistentState(false);
+        }
+        ZonePersistentState state = new ZonePersistentState();
+        if (!(nbt.get(ZONES_KEY) instanceof ListTag zones)) {
+            return state;
+        }
+        for (int i = 0; i < zones.size(); i++) {
+            try {
+                ZoneDefinition zone = readZone(zones.getCompound(i)
+                        .orElseThrow(() -> new IllegalArgumentException("zone is not a compound")));
+                ZoneDefinition previous = state.zonesByName.put(zone.name(), zone);
+                if (previous != null) {
+                    LOGGER.warn("Duplicate saved RTX Remix zone '{}'; using the last definition", zone.name());
+                }
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("Ignoring malformed saved RTX Remix zone at index {}: {}", i, e.getMessage());
+            }
+        }
+        return state;
+    }
+
+    private void requireWritable() {
+        if (!writable) {
+            throw new IllegalStateException(
+                    "saved zone data uses an unsupported schema; refusing to overwrite it");
+        }
+    }
+
+    private static CompoundTag writeZone(ZoneDefinition zone) {
+        CompoundTag nbt = new CompoundTag();
+        nbt.putString(NAME_KEY, zone.name());
+        nbt.putString(CHANNEL_KEY, zone.channel());
+        if (zone.isBox()) {
+            nbt.putString(SHAPE_KEY, BOX_SHAPE);
+            nbt.putDouble("minX", zone.minX());
+            nbt.putDouble("minY", zone.minY());
+            nbt.putDouble("minZ", zone.minZ());
+            nbt.putDouble("maxX", zone.maxX());
+            nbt.putDouble("maxY", zone.maxY());
+            nbt.putDouble("maxZ", zone.maxZ());
+            nbt.putDouble("fade", zone.fade());
+        } else {
+            nbt.putString(SHAPE_KEY, SPHERE_SHAPE);
+            nbt.putDouble("centerX", zone.centerX());
+            nbt.putDouble("centerY", zone.centerY());
+            nbt.putDouble("centerZ", zone.centerZ());
+            nbt.putDouble("innerRadius", zone.innerRadius());
+            nbt.putDouble("outerRadius", zone.outerRadius());
+        }
+        return nbt;
+    }
+
+    private static ZoneDefinition readZone(CompoundTag nbt) {
+        String name = requireString(nbt, NAME_KEY);
+        String channel = requireString(nbt, CHANNEL_KEY);
+        String shape = requireString(nbt, SHAPE_KEY);
+        return switch (shape) {
+            case SPHERE_SHAPE -> ZoneDefinition.storedSphere(name, channel,
+                    requireDouble(nbt, "centerX"),
+                    requireDouble(nbt, "centerY"),
+                    requireDouble(nbt, "centerZ"),
+                    requireDouble(nbt, "innerRadius"),
+                    requireDouble(nbt, "outerRadius"));
+            case BOX_SHAPE -> ZoneDefinition.storedBox(name, channel,
+                    requireDouble(nbt, "minX"),
+                    requireDouble(nbt, "minY"),
+                    requireDouble(nbt, "minZ"),
+                    requireDouble(nbt, "maxX"),
+                    requireDouble(nbt, "maxY"),
+                    requireDouble(nbt, "maxZ"),
+                    requireDouble(nbt, "fade"));
+            default -> throw new IllegalArgumentException("unknown shape '" + shape + "'");
+        };
+    }
+
+    private static String requireString(CompoundTag nbt, String key) {
+        return nbt.getString(key)
+                .orElseThrow(() -> new IllegalArgumentException("missing string '" + key + "'"));
+    }
+
+    private static double requireDouble(CompoundTag nbt, String key) {
+        return nbt.getDouble(key)
+                .orElseThrow(() -> new IllegalArgumentException("missing number '" + key + "'"));
+    }
+}

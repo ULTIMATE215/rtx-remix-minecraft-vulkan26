@@ -1,0 +1,55 @@
+accessWidener v2 official
+
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ModelPart inner classes for cuboid-level skinning
+accessible class net/minecraft/client/model/geom/ModelPart$Polygon
+accessible class net/minecraft/client/model/geom/ModelPart$Vertex
+accessible field net/minecraft/client/model/geom/ModelPart$Vertex u F
+accessible field net/minecraft/client/model/geom/ModelPart$Vertex v F
+
+# SpriteContents animation data for flipbook texture extraction
+accessible class net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
+accessible class net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture frames Ljava/util/List;
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture frameRowSize I
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture interpolateFrames Z
+accessible field net/minecraft/client/renderer/texture/TextureAtlasSprite padding I
+
+# Allocation-free 26.2 visibility walk and its two reusable graph buffers
+accessible class net/minecraft/client/renderer/SectionOcclusionGraph$GraphStorage
+accessible class net/minecraft/client/renderer/SectionOcclusionGraph$GraphState
+accessible class net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap <init> (I)V
+accessible field net/minecraft/client/renderer/SectionOcclusionGraph$SectionToNodeMap nodes [Lnet/minecraft/client/renderer/SectionOcclusionGraph$Node;
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$Node <init> (Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;Lnet/minecraft/core/Direction;I)V
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$Node setDirections (BLnet/minecraft/core/Direction;)V
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$Node hasDirection (Lnet/minecraft/core/Direction;)Z
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$Node addSourceDirection (Lnet/minecraft/core/Direction;)V
+accessible method net/minecraft/client/renderer/SectionOcclusionGraph$Node hasSourceDirections ()Z
+accessible field net/minecraft/client/renderer/SectionOcclusionGraph$Node section Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible field net/minecraft/client/renderer/SectionOcclusionGraph$Node directions B
+accessible field net/minecraft/client/renderer/SectionOcclusionGraph$Node sourceDirections B
+mutable field net/minecraft/client/renderer/SectionOcclusionGraph$Node step I
+accessible method net/minecraft/client/renderer/ViewArea getRenderSection (J)Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection;
+accessible field net/minecraft/client/renderer/Octree cameraSectionCenter Lnet/minecraft/core/BlockPos;
+accessible class net/minecraft/client/RotatingSectionStorage$Node
+
+# Immutable light snapshots for client workers and integrated-server readers
+accessible field net/minecraft/world/level/lighting/DataLayerStorageMap map Lit/unimi/dsi/fastutil/longs/Long2ObjectOpenHashMap;
+accessible class net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap
+accessible field net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap topSections Lit/unimi/dsi/fastutil/longs/Long2IntOpenHashMap;
+accessible field net/minecraft/world/level/lighting/SkyLightSectionStorage$SkyDataLayerStorageMap currentLowestY I
+accessible class net/minecraft/world/level/lighting/BlockLightSectionStorage$BlockDataLayerStorageMap
+
+# Cached multipart selection, with an indexed hot loop
+accessible class net/minecraft/client/renderer/block/dispatch/multipart/MultiPartModel$SharedBakedState
+
+# Render-region snapshot storage recycling (RenderedChunkMixin, PalettedContainerDataMixin)
+accessible class net/minecraft/client/renderer/chunk/SectionCopy
+accessible class net/minecraft/world/level/chunk/PalettedContainer$Data
+accessible field net/minecraft/world/level/chunk/PalettedContainer data Lnet/minecraft/world/level/chunk/PalettedContainer$Data;
+accessible class net/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection$CompileTask
+accessible class net/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection$SectionTask
+accessible class net/minecraft/client/renderer/chunk/SectionRenderDispatcher$RenderSection$SectionTask$SectionTaskResult

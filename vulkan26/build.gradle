@@ -1,0 +1,82 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+plugins {
+    id 'fabric-loom' version '1.17.19'
+}
+
+version = project.mod_version
+group = 'com.nvidia.rtxremix'
+base { archivesName = 'rtx-remix-renderer-26.2' }
+
+loom {
+    accessWidenerPath = file('src/main/resources/rtx-remix-renderer.accesswidener')
+    runs {
+        client {
+            vmArgs '-Xmx2G', '-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC',
+                    '-XX:G1NewSizePercent=20', '-XX:G1ReservePercent=20',
+                    '-XX:MaxGCPauseMillis=50', '-XX:G1HeapRegionSize=32M',
+                    '-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
+            runDir 'run'
+        }
+    }
+}
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:26.2'
+    implementation 'net.fabricmc:fabric-loader:0.19.3'
+    implementation 'net.fabricmc.fabric-api:fabric-api:0.153.0+26.2'
+    implementation 'org.lwjgl:lwjgl-shaderc:3.4.1'
+    testImplementation platform('org.junit:junit-bom:5.12.2')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+sourceSets.main.java.srcDir '../rtxremix-java/src'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+}
+
+processResources {
+    exclude 'README.md'
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+    def sourceRevision = providers.gradleProperty('sourceRevision').orElse('source-snapshot')
+    def sourceBranch = providers.gradleProperty('sourceBranch').orElse('minecraft-26.2')
+    inputs.property 'sourceRevision', sourceRevision
+    inputs.property 'sourceBranch', sourceBranch
+    filesMatching('benchmark.properties') {
+        expand 'gitCommit': sourceRevision.get(), 'gitBranch': sourceBranch.get()
+    }
+}
+
+test {
+    useJUnitPlatform()
+    systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
+    jvmArgs '--enable-native-access=ALL-UNNAMED', '-XX:-UsePerfData'
+    systemProperty 'java.awt.headless', 'true'
+    testLogging { events 'failed', 'skipped' }
+}
+
+tasks.withType(Jar).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    from('LICENSE') { into 'META-INF/licenses/rtx-remix-renderer' }
+}
+
+apply from: 'gradle/remix-runtime.gradle'

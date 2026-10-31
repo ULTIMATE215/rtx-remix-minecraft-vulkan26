@@ -1,0 +1,7 @@
+/.gradle/
+/build/
+/run/
+/logs/
+*.log
+hs_err_pid*
+/remix-runtime/
