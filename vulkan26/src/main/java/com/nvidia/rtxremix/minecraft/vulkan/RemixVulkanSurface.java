@@ -40,6 +40,10 @@ public final class RemixVulkanSurface implements GpuSurfaceBackend {
         presentModes = List.copyOf(vanilla.supportedPresentModes());
     }
 
+    public static boolean isSupported(GpuSurface surface) {
+        return surface != null && ((GpuSurfaceAccessor) surface).rtxremix$backend() instanceof RemixVulkanSurface;
+    }
+
     public static RemixVulkanSurface from(GpuSurface surface) {
         if (((GpuSurfaceAccessor) surface).rtxremix$backend() instanceof RemixVulkanSurface remix) {
             return remix;

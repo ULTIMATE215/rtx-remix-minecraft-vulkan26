@@ -6,8 +6,9 @@ keeps the RTX Remix runtime, integrated JNI bridge, mod identity, resources,
 settings, commands, and scene features.
 
 The port is in validation. Java sources and Vulkan shaders compile, and the
-full JVM suite passes in a standalone JUnit run against Minecraft 26.2. Gradle
-build, Windows native, packaging, and real-client validation are still pending.
+full JVM suite passes against Minecraft 26.2. Windows x64 Gradle builds, JNI
+compilation, JVM tests, and complete-JAR verification also pass on GitHub Actions.
+Windows ARM64, installer, and real-client rendering validation remain pending.
 Existing experimental
 `remix-vulkan-26.2-0.13.1.jar` artifacts do not contain this full port, and their
 test reports are not validation of it.
@@ -81,6 +82,13 @@ that instance. See [the installation guide](packaging/INSTALL.md). The root
 For an existing Fabric 26.2 instance, install the packaged JAR and Fabric API
 0.153.0+26.2, use Java 25, and select Vulkan before launching. With the game
 closed, set `preferredGraphicsBackend:"vulkan"` in the instance's `options.txt`.
+
+Minecraft can reset this preference to Default or OpenGL after an unsuccessful
+startup. If the log says `Using graphics backend OpenGL`, select Vulkan again
+under Video Settings, quit normally, and restart. Remix stays inactive on
+OpenGL and the mod keeps vanilla terrain rendering; the startup notification
+explains how to enable Vulkan. The RTX hotkey and `/rtx on` cannot enable capture
+until the Remix renderer has initialized successfully.
 
 World-saved zone definitions use `data/minecraft/rtx_remix_zones.dat` in 26.2.
 When opening a world with the parent's `data/rtx_remix_zones.dat`, the mod

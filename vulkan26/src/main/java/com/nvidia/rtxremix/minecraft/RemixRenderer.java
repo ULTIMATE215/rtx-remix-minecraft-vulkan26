@@ -109,7 +109,8 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
 
     // Remix API instance
     private RemixAPI remixApi;
-    private boolean initialized = false;
+    // Publishes initialized managers to the section workers reading the capture gate.
+    private volatile boolean initialized = false;
     private long windowHandle;
     
     private VulkanInterop vulkanInterop;

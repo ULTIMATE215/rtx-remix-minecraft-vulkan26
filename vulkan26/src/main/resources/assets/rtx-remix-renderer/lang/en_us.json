@@ -4,6 +4,10 @@
   "category.rtxremix": "RTX Remix",
   "key.category.rtx-remix-renderer.controls": "RTX Remix",
 
+  "rtxremix.renderer.unavailable": "RTX Remix unavailable",
+  "rtxremix.renderer.requires_vulkan": "Select Vulkan in Video Settings and restart Minecraft. Vanilla rendering is active.",
+  "rtxremix.renderer.failed": "RTX Remix could not start. Vanilla rendering is active. See latest.log for details.",
+
   "block.rtx-remix-renderer.copper_beacon": "Copper Beacon",
   "container.rtx-remix-renderer.copper_beacon": "Copper Beacon Controls",
   "container.rtx-remix-renderer.copper_beacon.dye": "Dye",

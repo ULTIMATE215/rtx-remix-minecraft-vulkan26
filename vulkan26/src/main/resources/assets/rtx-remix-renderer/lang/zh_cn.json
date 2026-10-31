@@ -1,0 +1,5 @@
+{
+  "rtxremix.renderer.unavailable": "RTX Remix 未启动",
+  "rtxremix.renderer.requires_vulkan": "请在视频设置中选择 Vulkan，然后重启 Minecraft。当前使用原版渲染。",
+  "rtxremix.renderer.failed": "RTX Remix 启动失败，当前使用原版渲染。详情见 latest.log。"
+}

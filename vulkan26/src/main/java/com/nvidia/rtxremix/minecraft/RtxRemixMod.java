@@ -37,6 +37,7 @@ import com.nvidia.rtxremix.minecraft.input.RemixMouseAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixKeyboardAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixInputGate;
 import com.nvidia.rtxremix.minecraft.vulkan.TextureOverlay;
+import com.nvidia.rtxremix.minecraft.vulkan.RemixVulkanSurface;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
@@ -79,6 +80,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.options.OptionsScreen;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.KeyMapping;
@@ -124,10 +126,13 @@ public class RtxRemixMod implements ClientModInitializer {
     private static RtxRemixMod instance;
     private static volatile long playSessionGeneration;
     private static boolean playSessionActive;
-    static public RemixRenderer renderer;
+    public static volatile RemixRenderer renderer;
     private static RtxSettings rtxSettings;
     private static RtxSettingsStore rtxSettingsStore;
     private boolean remixAvailable = false;
+    private boolean rendererUnavailableNoticePending;
+    private static final SystemToast.SystemToastId RENDERER_UNAVAILABLE_TOAST =
+            new SystemToast.SystemToastId(10_000L);
 
     public static RtxSettings getRtxSettings() {
         return rtxSettings;
@@ -163,8 +168,8 @@ public class RtxRemixMod implements ClientModInitializer {
         return Component.literal("Remix graphics preset '" + name + "' applied for this session");
     }
     
-    // Volatile: read off the render thread by SectionBuilderMixin's chunk-builder
-    // workers and by ChunkDataSenderMixin on the integrated-server thread.
+    // Requested master state. Capture also requires the published renderer to be
+    // initialized; workers and the integrated server read that effective gate.
     private static volatile boolean rtxEnabled = true;
     private static boolean entitiesEnabled = true;
     private static boolean worldEnabled = true;
@@ -463,8 +468,7 @@ public class RtxRemixMod implements ClientModInitializer {
                 if ((presses & 1) == 1) {
                     toggleRtx();
                     if (client.player != null) {
-                        client.player.sendOverlayMessage(
-                                Component.literal("RTX Rendering: " + (rtxEnabled ? "ON" : "OFF")));
+                        client.player.sendOverlayMessage(rtxRenderingStatus());
                     }
                 }
             }
@@ -484,7 +488,10 @@ public class RtxRemixMod implements ClientModInitializer {
             
             textureOverlay = new TextureOverlay();
             
-            if (remixAvailable) {
+            if (!RemixVulkanSurface.isSupported(client.windowSurface())) {
+                LOGGER.warn("RTX Remix requires Vulkan. Select Vulkan in Video Settings and restart Minecraft;"
+                        + " vanilla rendering remains active.");
+            } else if (remixAvailable) {
                 LOGGER.info("Initializing RTX Remix renderer...");
                 initializeRemix(client);
                 if (renderer != null && renderer.isInitialized()) {
@@ -498,6 +505,16 @@ public class RtxRemixMod implements ClientModInitializer {
                 }
             } else {
                 LOGGER.warn("RTX Remix disabled - SDK not found");
+            }
+            rendererUnavailableNoticePending = renderer == null || !renderer.isInitialized();
+        });
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Wait for the initial resource reload so the toast uses the loaded language and font.
+            if (rendererUnavailableNoticePending && client.gui.overlay() == null) {
+                rendererUnavailableNoticePending = false;
+                SystemToast.add(client.gui.toastManager(), RENDERER_UNAVAILABLE_TOAST,
+                        Component.translatable("rtxremix.renderer.unavailable"), rendererUnavailableMessage(client));
             }
         });
         
@@ -757,19 +774,19 @@ public class RtxRemixMod implements ClientModInitializer {
             dispatcher.register(ClientCommands.literal("rtx")
                 .executes(context -> {
                     toggleRtx();
-                    context.getSource().sendFeedback(Component.literal("RTX Rendering: " + (rtxEnabled ? "ON" : "OFF")));
+                    context.getSource().sendFeedback(rtxRenderingStatus());
                     return 1;
                 })
                 .then(ClientCommands.literal("on")
                     .executes(context -> {
                         setRtxEnabled(true);
-                        context.getSource().sendFeedback(Component.literal("RTX Rendering: ON"));
+                        context.getSource().sendFeedback(rtxRenderingStatus());
                         return 1;
                     }))
                 .then(ClientCommands.literal("off")
                     .executes(context -> {
                         setRtxEnabled(false);
-                        context.getSource().sendFeedback(Component.literal("RTX Rendering: OFF"));
+                        context.getSource().sendFeedback(rtxRenderingStatus());
                         return 1;
                     }))
                 .then(ClientCommands.literal("status")
@@ -2322,8 +2339,22 @@ public class RtxRemixMod implements ClientModInitializer {
         }
     }
 
+    /** Effective capture gate shared by rendering, section workers, and the integrated server. */
     public static boolean isRtxEnabled() {
-        return rtxEnabled;
+        RemixRenderer current = renderer;
+        return rtxEnabled && current != null && current.isInitialized();
+    }
+
+    private static Component rtxRenderingStatus() {
+        if (rtxEnabled && !isRtxEnabled()) {
+            return rendererUnavailableMessage(Minecraft.getInstance());
+        }
+        return Component.literal("RTX Rendering: " + (rtxEnabled ? "ON" : "OFF"));
+    }
+
+    private static Component rendererUnavailableMessage(Minecraft client) {
+        return Component.translatable(client != null && !RemixVulkanSurface.isSupported(client.windowSurface())
+                ? "rtxremix.renderer.requires_vulkan" : "rtxremix.renderer.failed");
     }
     
     /**
@@ -2336,18 +2367,23 @@ public class RtxRemixMod implements ClientModInitializer {
             throw new IllegalStateException("setRtxEnabled must run on the render thread");
         }
         if (rtxEnabled == enabled) return;
-        if (!enabled && client != null && client.level != null) {
+        boolean wasCapturing = isRtxEnabled();
+        if (wasCapturing && !enabled && client != null && client.level != null) {
             // Publish pending light changes before the new raster builds begin. The same
             // immutable publisher owns this path and regular light updates.
             ClientLightSnapshots.publishRealSnapshots(client.level);
         }
         rtxEnabled = enabled;
-        LOGGER.info("RTX Rendering {}", enabled ? "ENABLED" : "DISABLED");
+        boolean capturing = isRtxEnabled();
+        LOGGER.info("RTX rendering requested: {}; capture active: {}", enabled, capturing);
+        // Changing a preference cannot activate an absent or failed renderer, and
+        // must not invalidate working vanilla meshes or resume animation forwarding.
+        if (wasCapturing == capturing) return;
 
         // Pause/resume atlas animation forwarding alongside the toggle. Without
         // this, SpriteContents.upload continues to fire while scene submission
         // (and thus flush) is skipped, growing pendingPatches unbounded.
-        if (enabled) {
+        if (capturing) {
             AtlasAnimationForwarder.resume();
         } else {
             AtlasAnimationForwarder.pause();
@@ -2366,11 +2402,11 @@ public class RtxRemixMod implements ClientModInitializer {
                 // What vanilla has built is what the player has looked at, in either
                 // mode; recapturing that restores the scene they had. Every loaded
                 // section would be three times as much terrain.
-                LongSet built = enabled
+                LongSet built = capturing
                         ? builtSections(client)
                         : LongSets.emptySet();
                 client.levelExtractor.allChanged();
-                if (enabled) {
+                if (capturing) {
                     recaptureTerrainForRemix(client, built);
                 }
             }
@@ -2413,12 +2449,12 @@ public class RtxRemixMod implements ClientModInitializer {
 
     /**
      * "Active" predicates: a subsystem is only active when the master RTX flag
-     * is on AND its own sub-flag is on. The master flag (set by /rtx on|off)
+     * is on, the renderer is initialized, AND its own sub-flag is on. The master flag (set by /rtx on|off)
      * has authority over every sub-toggle. Use these, not the bare sub-flag
      * accessors, anywhere a decision means "is Remix actually rendering this".
      */
     public static boolean isWorldActive() {
-        return rtxEnabled && worldEnabled;
+        return isRtxEnabled() && worldEnabled;
     }
 
     /** Whether Remix, rather than vanilla, is drawing the world right now. */
@@ -2431,18 +2467,18 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     public static boolean isEntitiesActive() {
-        return rtxEnabled && entitiesEnabled;
+        return isRtxEnabled() && entitiesEnabled;
     }
 
     public static boolean isBlockEntitiesActive() {
-        return rtxEnabled && blockEntitiesEnabled;
+        return isRtxEnabled() && blockEntitiesEnabled;
     }
 
     public static boolean isSkyActive() {
-        return rtxEnabled && skyEnabled;
+        return isRtxEnabled() && skyEnabled;
     }
 
     public static boolean isParticlesActive() {
-        return rtxEnabled && particlesEnabled;
+        return isRtxEnabled() && particlesEnabled;
     }
 }
