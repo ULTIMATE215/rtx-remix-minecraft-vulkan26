@@ -20,6 +20,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.Direction;
+import net.minecraft.util.LightCoordsUtil;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
@@ -184,13 +185,18 @@ final class RemixRenderContext implements QuadEmitter {
 
     @Override
     public QuadEmitter fromBakedQuad(BakedQuad quad) {
-        clear();
+        // Fabric sets the cull face before converting a baked quad. Keep that
+        // and other properties the baked model does not supply.
+        Arrays.fill(colors, -1);
+        Arrays.fill(normalSet, false);
         var material = quad.materialInfo();
+        int emission = material.lightEmission();
+        int light = LightCoordsUtil.pack(emission, emission);
         for (int vertex = 0; vertex < 4; vertex++) {
             pos(vertex, quad.position(vertex));
             long uv = quad.packedUV(vertex);
             uv(vertex, UVPair.unpackU(uv), UVPair.unpackV(uv));
-            lightmap(vertex, material.lightEmission() << 4);
+            lightmap(vertex, light);
         }
         nominalFace(quad.direction());
         atlas(QuadAtlas.ofLocation(material.sprite().atlasLocation()));
@@ -198,6 +204,7 @@ final class RemixRenderContext implements QuadEmitter {
         itemRenderType(material.itemRenderType());
         tintIndex(material.tintIndex());
         diffuseShade(material.shade());
+        emissive(emission == 15);
         animated(material.sprite().isAnimated());
         bakedSprite = material.sprite();
         return this;

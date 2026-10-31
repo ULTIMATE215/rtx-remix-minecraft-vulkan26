@@ -44,6 +44,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
 import net.minecraft.world.level.BlockGetter;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -526,8 +527,9 @@ public final class BlockQuadEmitter {
     private BlockState frapiState;
     private BlockAndTintGetter frapiWorld;
 
-    private boolean frapiCullTest(Direction dir) {
-        return !shouldDrawBlockSide(frapiWorld, frapiState, dir);
+    private boolean frapiCullTest(@Nullable Direction dir) {
+        // Fabric also queries the unculled group, represented by a null face.
+        return dir != null && !shouldDrawBlockSide(frapiWorld, frapiState, dir);
     }
 
     private void stageFrapiQuad(RemixRenderContext quad) {
