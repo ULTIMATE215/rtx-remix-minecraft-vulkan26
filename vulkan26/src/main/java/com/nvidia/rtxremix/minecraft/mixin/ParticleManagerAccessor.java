@@ -8,8 +8,6 @@ import net.minecraft.client.particle.ParticleGroup;
 import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.ParticleResources;
-import net.minecraft.client.particle.SpriteSet;
-import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
@@ -22,9 +20,4 @@ public interface ParticleManagerAccessor {
 
     @Accessor("resourceManager")
     ParticleResources rtxremix$resources();
-
-    /** Sprite sets keyed by particle type id in the current particle resources. */
-    default Map<Identifier, ? extends SpriteSet> rtxremix$getSpriteAwareFactories() {
-        return ((ParticleResourcesAccessor) rtxremix$resources()).rtxremix$spriteSets();
-    }
 }

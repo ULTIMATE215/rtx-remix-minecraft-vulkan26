@@ -10,6 +10,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import org.junit.jupiter.api.Test;
+import org.spongepowered.asm.mixin.gen.Accessor;
+import org.spongepowered.asm.mixin.gen.Invoker;
 
 import java.io.InputStreamReader;
 import java.lang.annotation.Annotation;
@@ -80,6 +82,30 @@ class MixinPackageBoundaryTest {
 
         assertEquals(Set.of(), offenders,
                 "mixin-added members must be prefixed with " + MEMBER_PREFIX);
+    }
+
+    /**
+     * These interfaces access Minecraft classes. A non-accessor method, even a
+     * prefixed default helper, changes Mixin's subtype from ACCESSOR to INTERFACE
+     * and makes preparation reject a class target before any entrypoint can run.
+     */
+    @Test
+    void accessorInterfacesDeclareOnlyAccessorsAndInvokers() throws Exception {
+        Set<String> offenders = new TreeSet<>();
+        for (String simpleName : configuredMixins()) {
+            Class<?> mixin = Class.forName(
+                    MIXIN_PACKAGE + "." + simpleName, false, getClass().getClassLoader());
+            if (!mixin.isInterface()) continue;
+            for (Method method : mixin.getDeclaredMethods()) {
+                if (!method.isSynthetic() && !method.isAnnotationPresent(Accessor.class)
+                        && !method.isAnnotationPresent(Invoker.class)) {
+                    offenders.add(simpleName + "." + method.getName());
+                }
+            }
+        }
+
+        assertEquals(Set.of(), offenders,
+                "accessor interfaces must contain only @Accessor/@Invoker methods; move helpers to callers");
     }
 
     private Set<String> configuredMixins() throws Exception {

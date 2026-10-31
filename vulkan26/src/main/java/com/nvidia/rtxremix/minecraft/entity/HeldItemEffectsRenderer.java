@@ -8,7 +8,9 @@ import com.nvidia.rtxremix.minecraft.light.HeldLightState;
 import com.nvidia.rtxremix.minecraft.particle.ParticleTint;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.mixin.ParticleManagerAccessor;
+import com.nvidia.rtxremix.minecraft.mixin.ParticleResourcesAccessor;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.particle.ParticleResources;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -141,8 +143,8 @@ public final class HeldItemEffectsRenderer {
     }
 
     private static SpriteSet spriteProvider(Minecraft client, ParticleType<?> particle) {
-        Object provider = ((ParticleManagerAccessor) client.particleEngine)
-                .rtxremix$getSpriteAwareFactories()
+        ParticleResources resources = ((ParticleManagerAccessor) client.particleEngine).rtxremix$resources();
+        Object provider = ((ParticleResourcesAccessor) resources).rtxremix$spriteSets()
                 .get(BuiltInRegistries.PARTICLE_TYPE.getKey(particle));
         return provider instanceof SpriteSet spriteProvider ? spriteProvider : null;
     }
