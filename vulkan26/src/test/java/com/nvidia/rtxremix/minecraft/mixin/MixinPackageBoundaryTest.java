@@ -10,8 +10,14 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
+import org.spongepowered.asm.mixin.injection.struct.Constructor;
 
 import java.io.InputStreamReader;
 import java.lang.annotation.Annotation;
@@ -106,6 +112,40 @@ class MixinPackageBoundaryTest {
 
         assertEquals(Set.of(), offenders,
                 "accessor interfaces must contain only @Accessor/@Invoker methods; move helpers to callers");
+    }
+
+    /** Exercise Mixin's actual line-range extraction against the compiled Java 25 constructors. */
+    @Test
+    void instanceFieldInitializersSurviveMixinExtraction() throws Exception {
+        for (String simpleName : configuredMixins()) {
+            ClassNode mixin = new ClassNode();
+            String resource = MIXIN_PACKAGE.replace('.', '/') + "/" + simpleName + ".class";
+            try (var stream = getClass().getClassLoader().getResourceAsStream(resource)) {
+                assertNotNull(stream, "missing " + resource);
+                new ClassReader(stream).accept(mixin, 0);
+            }
+            for (var method : mixin.methods) {
+                if (!method.name.equals("<init>")) continue;
+                Set<String> declared = initializedFields(method.instructions, mixin.name);
+                if (declared.isEmpty()) continue;
+                var range = Constructor.getRange(method);
+                assertTrue(range.isValid(), simpleName + " has no usable constructor line range");
+                Set<String> extracted = initializedFields(range.apply(method.instructions, false), mixin.name);
+                assertEquals(declared, extracted, simpleName + method.desc
+                        + ": Mixin must copy every instance field initializer into the target constructor");
+            }
+        }
+    }
+
+    private static Set<String> initializedFields(Iterable<? extends AbstractInsnNode> instructions, String owner) {
+        Set<String> fields = new TreeSet<>();
+        for (var instruction : instructions) {
+            if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
+                    && field.owner.equals(owner)) {
+                fields.add(field.name);
+            }
+        }
+        return fields;
     }
 
     private Set<String> configuredMixins() throws Exception {

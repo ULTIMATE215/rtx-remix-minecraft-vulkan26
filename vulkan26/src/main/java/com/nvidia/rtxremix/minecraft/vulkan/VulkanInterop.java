@@ -17,13 +17,11 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkImageMemoryBarrier;
-import org.lwjgl.vulkan.VkImportSemaphoreWin32HandleInfoKHR;
 import org.lwjgl.vulkan.VkSemaphoreCreateInfo;
 import org.lwjgl.vulkan.VkSemaphoreTypeCreateInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.lwjgl.vulkan.KHRExternalSemaphoreWin32.vkImportSemaphoreWin32HandleKHR;
 import static org.lwjgl.vulkan.VK12.*;
 
 /**
@@ -313,10 +311,9 @@ public final class VulkanInterop implements AutoCloseable {
                 check(vkCreateSemaphore(device, create, null, handle), "create interop timeline semaphore");
                 long semaphore = handle.get(0);
                 try {
-                    var importInfo = VkImportSemaphoreWin32HandleInfoKHR.calloc(stack).sType$Default()
-                            .semaphore(semaphore).handleType(VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT)
-                            .handle(sharedHandle);
-                    check(vkImportSemaphoreWin32HandleKHR(device, importInfo), "import interop timeline semaphore");
+                    check(VulkanWin32SemaphoreImport.importTimeline(device.address(), semaphore, sharedHandle,
+                                    device.getCapabilities().vkImportSemaphoreWin32HandleKHR),
+                            "import interop timeline semaphore");
                     return semaphore;
                 } catch (RuntimeException | Error failure) {
                     vkDestroySemaphore(device, semaphore, null);

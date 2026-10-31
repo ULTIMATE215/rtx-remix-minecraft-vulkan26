@@ -102,6 +102,11 @@ public abstract class ChunkRenderingDataPreparerMixin {
     private static final ThreadLocal<ArrayDeque<ProfileScope>> rtxremix$seedScope = new ThreadLocal<>();
     private static final ThreadLocal<ArrayDeque<ProfileScope>> rtxremix$walkScope = new ThreadLocal<>();
 
+    // javac 25's implicit constructor spans the field declarations in its line
+    // table, causing Mixin to omit both queue initializers. An explicit constructor
+    // gives Mixin a separate body range while retaining the final fields.
+    protected ChunkRenderingDataPreparerMixin() {}
+
     @Inject(method = "waitAndReset", at = @At("HEAD"))
     private void rtxremix$storageHead(ViewArea storage, CallbackInfo ci) {
         rtxremix$open(rtxremix$storageScope, "ChunkVisibility.setStorage");
