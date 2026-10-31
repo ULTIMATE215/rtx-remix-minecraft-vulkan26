@@ -11,6 +11,7 @@ import com.mojang.blaze3d.vertex.VertexSorting;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.terrain.VanillaSectionBuilds;
+import com.nvidia.rtxremix.minecraft.terrain.TerrainCaptureDiagnostics;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockDataQueue;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionCaptureAccess;
@@ -49,6 +50,7 @@ public abstract class SectionBuilderMixin {
             SectionBufferBuilderPack buffers, Operation<SectionCompiler.Results> original) {
         boolean capturing = VanillaSectionBuilds.beginBuild(RtxRemixMod::isRtxEnabled);
         rtxremix$captureForBuild.set(capturing);
+        if (capturing) TerrainCaptureDiagnostics.captureStarted();
         BlockQuadEmitter emitter = null;
         try {
             if (!capturing) {
@@ -69,8 +71,12 @@ public abstract class SectionBuilderMixin {
                     result = original.call(sectionPos, region, sorting, buffers);
                 }
                 BlockDataQueue.enqueue(emitter.finishSection(sectionPos), token);
+                TerrainCaptureDiagnostics.captureCompleted();
                 return result;
             }
+        } catch (RuntimeException | Error failure) {
+            if (capturing) TerrainCaptureDiagnostics.captureFailed();
+            throw failure;
         } finally {
             if (emitter != null && emitter.isActive()) {
                 emitter.discardSection();

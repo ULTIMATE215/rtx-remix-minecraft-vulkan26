@@ -652,6 +652,13 @@ public abstract class MinecraftClientMixin {
         }
     }
 
+    @Inject(method = "close", at = @At("HEAD"))
+    private void rtxremix$closeHead(CallbackInfo ci) {
+        // exitWorldAndClose still renders disconnect progress screens after
+        // Fabric's CLIENT_STOPPING event. All such frames finish before close.
+        RtxRemixMod.shutdownForClientStop();
+    }
+
     @Inject(method = "close", at = @At("TAIL"))
     private void rtxremix$closeTail(CallbackInfo ci) {
         RtxRemixMod.shutdownAfterMinecraftClose();

@@ -8,6 +8,7 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockDataQueue;
+import com.nvidia.rtxremix.minecraft.terrain.TerrainCaptureDiagnostics;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionCaptureAccess;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionSnapshotRelease;
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionBuildCapture;
@@ -16,6 +17,7 @@ import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.SectionMesh;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher.RenderSection.SectionTask.SectionTaskResult;
+import net.minecraft.core.SectionPos;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -43,17 +45,25 @@ public abstract class RebuildTaskMixin {
         BlockDataQueue.CaptureToken capture = ((RegionCaptureAccess) region).rtxremix$captureToken();
         rtxremix$captureToken = new BlockDataQueue.CaptureToken(
                 capture.queueGeneration(), capture.chunkToken(), rtxremix$cancelled);
+        TerrainCaptureDiagnostics.taskCreated();
     }
 
     @WrapMethod(method = "doTask")
     private SectionTaskResult rtxremix$consumeRegion(SectionBufferBuilderPack buffers,
                                                     Operation<SectionTaskResult> original) {
         if (!rtxremix$regionUse.compareAndSet(0, 1)) return SectionTaskResult.CANCELLED;
+        TerrainCaptureDiagnostics.taskStarted();
         boolean captureBegun = false;
         try {
             SectionBuildCapture.begin(rtxremix$captureToken);
             captureBegun = true;
             return original.call(buffers);
+        } catch (NullPointerException failure) {
+            // 26.2's dispatcher catches NPE around the entire task as if buffer
+            // acquisition failed. Do not silently requeue a failed, released
+            // region and leak its builder buffer: preserve the real task error.
+            throw new IllegalStateException("Terrain compile task failed at "
+                    + SectionPos.of(((RegionCaptureAccess) region).rtxremix$sectionNode()), failure);
         } finally {
             if (captureBegun) SectionBuildCapture.end();
             rtxremix$regionUse.set(2);

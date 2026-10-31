@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.vulkan;
 
+import com.mojang.blaze3d.systems.CommandEncoder;
 import com.mojang.blaze3d.systems.CommandEncoderBackend;
 import com.mojang.blaze3d.systems.GpuSurface;
 import com.mojang.blaze3d.systems.GpuSurfaceBackend;
@@ -67,6 +68,30 @@ public final class RemixVulkanSurface implements GpuSurfaceBackend {
     }
 
     public boolean isOwnedBy(FrameSink sink) { return remix == sink; }
+
+    /** Finish the outer surface's frame before its source texture or interop is destroyed. */
+    public void finishPendingFrame(GpuSurface surface, GpuTextureView texture) {
+        requireOpen();
+        if (from(surface) != this || remix == null) {
+            throw new IllegalArgumentException("The surface is not owned by this Remix presenter");
+        }
+        if (!surface.isAcquired()) return;
+        completeAcquiredFrame(surface, RenderSystem.getDevice().createCommandEncoder(), texture,
+                ((GpuSurfaceAccessor) surface).rtxremix$hasBlittedTexture());
+    }
+
+    static void completeAcquiredFrame(GpuSurface surface, CommandEncoder encoder,
+                                      GpuTextureView texture, boolean hasBlittedTexture) {
+        if (!surface.isAcquired()) return;
+        if (!hasBlittedTexture) {
+            surface.blitFromTexture(encoder, texture);
+        }
+        // The interop release and timeline signal recorded by blit must reach
+        // the queue before Remix waits on them. Present also releases GpuSurface's
+        // acquisition; clearing only this backend's flag cannot do that.
+        encoder.submit();
+        surface.present();
+    }
 
     @Override
     public void configure(GpuSurface.Configuration configuration) throws SurfaceException {

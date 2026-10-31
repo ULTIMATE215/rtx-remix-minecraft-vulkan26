@@ -1402,6 +1402,7 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
      */
     private void doClearWorld() {
         LOGGER.info("Clearing world resources...");
+        com.nvidia.rtxremix.minecraft.terrain.TerrainCaptureDiagnostics.reset();
         joinInFlightParticleRenderTask();
         discardPendingParticleFrame();
         
@@ -1450,6 +1451,11 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
     public void shutdown() {
         LOGGER.info("Shutting down RTX Remix renderer...");
 
+        if (windowSurface != null && windowSurface.isOwnedBy(this) && vulkanInterop != null) {
+            Minecraft client = Minecraft.getInstance();
+            windowSurface.finishPendingFrame(client.windowSurface(),
+                    client.gameRenderer.mainRenderTarget().getColorTextureView());
+        }
         initialized = false;
         pendingTextureReload = false;
         pendingTerrainRecaptureAfterTextureReload = false;

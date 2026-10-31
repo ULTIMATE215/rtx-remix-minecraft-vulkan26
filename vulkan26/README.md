@@ -90,6 +90,22 @@ OpenGL and the mod keeps vanilla terrain rendering; the startup notification
 explains how to enable Vulkan. The RTX hotkey and `/rtx on` cannot enable capture
 until the Remix renderer has initialized successfully.
 
+If Vulkan starts and entities appear but terrain remains missing, the mod logs
+up to six `Terrain pipeline has no captured columns` samples automatically.
+These include visibility, extraction, compilation, builder-buffer availability,
+and cumulative capture counts. Keep the full `logs/latest.log` after entering
+the world; F3 statistics and extra JVM arguments are not required. A null pointer
+inside a section task is reported with its section position and original cause
+instead of being silently treated as buffer-pool exhaustion by the dispatcher.
+
+The runtime's view-distance fade also applies to cloud geometry. Its horizontal
+distance mode can leave a circular cloud patch above the camera. To disable that
+clipping, close Minecraft and change `rtx.viewDistance.distanceMode = 0` in the
+instance's `rtx.conf`, then restart. This also disables distant terrain fading;
+the pinned runtime has no per-cloud exemption. Restore `3` to restore the shipped
+fade mode. `/rtx viewdistance auto off` only restores the 32-chunk fade distances
+and does not turn the fade off. This setting does not fix missing terrain captures.
+
 World-saved zone definitions use `data/minecraft/rtx_remix_zones.dat` in 26.2.
 When opening a world with the parent's `data/rtx_remix_zones.dat`, the mod
 imports it before reading saved zones. It keeps the original file and uses an

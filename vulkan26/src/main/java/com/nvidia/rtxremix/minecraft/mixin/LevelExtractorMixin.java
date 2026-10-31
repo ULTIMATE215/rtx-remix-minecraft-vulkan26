@@ -11,6 +11,7 @@ import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkBuilderBlockEntityAccess;
 import com.nvidia.rtxremix.minecraft.terrain.NeighbourReflagFilter;
+import com.nvidia.rtxremix.minecraft.terrain.TerrainCaptureDiagnostics;
 import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.terrain.capture.RegionBuilderRelease;
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionRegionReferences;
@@ -59,6 +60,7 @@ public abstract class LevelExtractorMixin {
                                      Operation<Void> original) {
         try (ProfileScope scope = ProfileScope.begin("LevelExtractor.extract")) {
             original.call(delta, camera, partialTick);
+            TerrainCaptureDiagnostics.afterExtraction(levelRenderer, levelRenderState, sectionUpdateTracker);
         } finally {
             RenderRegionCache cache = rtxremix$frameRegionCache;
             rtxremix$frameRegionCache = null;

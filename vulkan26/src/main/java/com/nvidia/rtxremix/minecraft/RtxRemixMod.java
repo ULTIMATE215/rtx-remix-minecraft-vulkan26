@@ -518,10 +518,10 @@ public class RtxRemixMod implements ClientModInitializer {
             }
         });
         
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-            shutdownForClientStop();
-        });
-        
+        // MinecraftClientMixin closes Remix at Minecraft.close. In 26.2 the
+        // CLIENT_STOPPING event precedes disconnect's progress-screen frames,
+        // which still need the surface, interop images, and native presenter.
+
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             boolean replacingSession = playSessionActive;
             playSessionActive = true;

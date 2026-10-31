@@ -13,4 +13,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface GpuSurfaceAccessor {
     @Accessor("backend")
     GpuSurfaceBackend rtxremix$backend();
+
+    @Accessor("hasBlittedTexture")
+    boolean rtxremix$hasBlittedTexture();
 }
