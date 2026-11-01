@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.particle.rapids;
 
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.texture.FluidTint;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SingleQuadParticle;
@@ -250,7 +251,7 @@ public final class WaterRapidParticleSpawner {
 
     private static float[] foamColor(ClientLevel world, BlockPos pos, FluidState fluidState) {
         var model = Minecraft.getInstance().getModelManager().getFluidStateModelSet().get(fluidState);
-        int color = model.tintSource().colorInWorld(world.getBlockState(pos), world, pos);
+        int color = FluidTint.color(model, world, pos);
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
         float b = (color & 0xFF) / 255.0f;

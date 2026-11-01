@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.FluidTint;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.fabricmc.fabric.api.client.renderer.v1.model.FabricBlockStateModel;
@@ -576,7 +577,7 @@ public final class BlockQuadEmitter {
         String layer = isLava ? "solid" : "translucent";
         int fluidColor = isWater
                 ? getCachedWaterColor(model, world, lx, ly, lz)
-                : fluidColor(model, world);
+                : FluidTint.color(model, world, fluidPos);
         int r = (fluidColor >> 16) & 0xFF, g = (fluidColor >> 8) & 0xFF, b = fluidColor & 0xFF;
         int color = 0xFF000000 | (r << 16) | (g << 8) | b;
 
@@ -904,14 +905,10 @@ public final class BlockQuadEmitter {
         int cell = ((ly >> 3) << 4) | ((lz >> 2) << 2) | (lx >> 2);
         int bit = 1 << cell;
         if ((waterColorKnownMask & bit) == 0) {
-            waterColorCache[cell] = fluidColor(model, world);
+            waterColorCache[cell] = FluidTint.color(model, world, fluidPos);
             waterColorKnownMask |= bit;
         }
         return waterColorCache[cell];
-    }
-
-    private int fluidColor(FluidModel model, BlockAndTintGetter world) {
-        return model.tintSource().colorInWorld(world.getBlockState(fluidPos), world, fluidPos);
     }
 
     // --- Helpers ---
