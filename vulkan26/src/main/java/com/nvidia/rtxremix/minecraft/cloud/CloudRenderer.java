@@ -53,7 +53,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * instead of publishing a mesh into the wrong scene.
  */
 public final class CloudRenderer {
-    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(CloudRenderer.class);
     private static final Identifier VANILLA_CLOUD_TEXTURE =
             Identifier.withDefaultNamespace("textures/environment/clouds.png");
     static final int PALETTE_SIZE = 32;
@@ -73,9 +72,6 @@ public final class CloudRenderer {
     private static final float SSS_MAX_SAMPLE_RADIUS = 1.0f;
 
     private final RemixRenderer renderer;
-    private final CloudVolumeSettings volumeSettings = new CloudVolumeSettings();
-    private VolumetricCloudRenderer volumeRenderer;
-    private boolean volumeFailed;
     private final MeshCreator meshCreator;
     private final PaletteEntry[] palette = new PaletteEntry[PALETTE_SIZE];
     private final Map<Long, ActiveCloud> clouds = new HashMap<>();
@@ -129,12 +125,6 @@ public final class CloudRenderer {
 
     public void render(ClientLevel world, Vec3 cameraPos, float tickDelta) {
         resetFrameStats();
-        if (volumeSettings.isEnabled() && !volumeFailed) {
-            if (material != null || paletteGenerationScheduled || vanillaTextureWidth != 0) releaseResources();
-            // The volume needs this frame's traced depth, so it runs after Submit.
-            return;
-        }
-        closeVolume();
         if (world != currentWorld) {
             clearScene();
             currentWorld = world;
@@ -702,8 +692,6 @@ public final class CloudRenderer {
         try {
             releaseResources();
         } finally {
-            closeVolume();
-            volumeFailed = false;
             currentWorld = null;
         }
     }
@@ -712,7 +700,6 @@ public final class CloudRenderer {
         try {
             releaseResources();
         } finally {
-            closeVolume();
             resetFrameStats();
         }
     }
@@ -786,34 +773,7 @@ public final class CloudRenderer {
 
     /** Whether the active cloud mode is healthy enough to replace Minecraft's draw. */
     public boolean shouldSuppressVanillaClouds() {
-        if (volumeSettings.isEnabled() && !volumeFailed) return true;
         return proceduralClouds ? paletteFailure == null : vanillaFailure == null;
-    }
-
-    public CloudVolumeSettings getVolumeSettings() { return volumeSettings; }
-
-    /** The returned texture is a world-only image; the shared Remix image is never modified here. */
-    public com.mojang.blaze3d.textures.GpuTextureView compositeVolume(
-            com.mojang.blaze3d.textures.GpuTextureView scene,
-            com.mojang.blaze3d.textures.GpuTextureView depth) {
-        if (!volumeSettings.isEnabled() || volumeFailed) return scene;
-        Minecraft client = Minecraft.getInstance();
-        try {
-            if (volumeRenderer == null) volumeRenderer = new VolumetricCloudRenderer(volumeSettings);
-            return volumeRenderer.render(client.level, client.gameRenderer.mainCamera(),
-                    client.getDeltaTracker().getGameTimeDeltaPartialTick(true), cloudsHeight, cloudSize,
-                    renderer.getLightManager().getSkyLightState(), scene, depth);
-        } catch (RuntimeException failure) {
-            volumeFailed = true;
-            closeVolume();
-            LOGGER.error("Volumetric clouds failed; using mesh clouds until resources are reloaded", failure);
-            return scene;
-        }
-    }
-
-    private void closeVolume() {
-        if (volumeRenderer != null) volumeRenderer.close();
-        volumeRenderer = null;
     }
 
     long paletteGenerationEpoch() {

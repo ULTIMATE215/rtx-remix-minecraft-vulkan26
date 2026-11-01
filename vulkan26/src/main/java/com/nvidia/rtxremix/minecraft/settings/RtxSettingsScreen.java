@@ -136,20 +136,9 @@ public final class RtxSettingsScreen extends Screen {
         for (Row row : rows) {
             if (row.control() instanceof SliderControl slider) slider.refresh();
             if (row.control() instanceof ChoiceControl choice) choice.refresh();
-            if (row.setting() != null) row.control().active = relevant(row.setting());
         }
         updateButtons();
         positionRows();
-    }
-
-    private boolean relevant(RtxSetting<?> setting) {
-        var volumetric = settings.byId("clouds.volumetric");
-        boolean volume = volumetric != null && Boolean.TRUE.equals(draft.get(volumetric));
-        return switch (setting.id()) {
-            case "clouds.procedural", "clouds.vanillaEdgeSmoothness" -> !volume;
-            case "clouds.quality", "clouds.thickness", "clouds.coverage", "clouds.density", "clouds.windSpeed" -> volume;
-            default -> true;
-        };
     }
 
     private void updateButtons() {
