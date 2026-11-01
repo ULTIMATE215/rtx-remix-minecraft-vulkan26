@@ -22,6 +22,11 @@ public final class DlssSettings {
     public static final List<String> MODES = List.of(REMIX, SR_M, SR_L, RR);
 
     private String selected = REMIX;
+    private String frameGeneration = REMIX;
+    private final RtxSetting<String> frameGenerationSetting = RtxSetting.ofChoice(
+            "dlss.frameGeneration", SettingGroup.DLSS, "rtxremix.setting.dlss.frameGeneration",
+            "rtxremix.setting.dlss.frameGeneration.tip", List.of(REMIX, "off", "on"),
+            "rtxremix.settings.value.frameGeneration.", REMIX, () -> frameGeneration, value -> frameGeneration = value);
     private final RtxSetting<String> setting = RtxSetting.ofChoice(
             ID, SettingGroup.DLSS, "rtxremix.setting.dlss.mode", "rtxremix.setting.dlss.mode.tip",
             MODES, "rtxremix.settings.value.dlss.", REMIX, () -> selected, value -> selected = value);
@@ -30,12 +35,17 @@ public final class DlssSettings {
         return setting;
     }
 
+    public RtxSetting<String> frameGenerationSetting() { return frameGenerationSetting; }
+
     /**
      * Call after loading the library and before Startup, so Remix derives the matching path-tracer
-     * settings. This leaves quality, frame generation and the saved sparse-rendering preference
-     * alone. Sparse rendering is inactive on SR because the runtime requires RR for it.
+     * settings. Frame generation changes only when explicitly selected. Quality and the saved
+     * sparse-rendering preference stay intact; the runtime requires RR for sparse rendering.
      */
     public void applyBeforeStartup(BiConsumer<String, String> configWriter) {
+        if (!REMIX.equals(frameGeneration)) {
+            configWriter.accept("rtx.dlfg.enable", Boolean.toString("on".equals(frameGeneration)));
+        }
         if (REMIX.equals(selected)) {
             return;
         }

@@ -15,7 +15,6 @@ import java.util.Map;
 
 import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.KeyDecision.BLOCK;
 import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.KeyDecision.PASS;
-import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.KeyDecision.TOGGLE_MENU;
 import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.VisibilityChange.CLOSED;
 import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.VisibilityChange.NONE;
 import static com.nvidia.rtxremix.minecraft.input.RemixInputGate.VisibilityChange.OPENED;
@@ -29,10 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RemixInputGateTest {
 
     @Test
-    void altXOpensWheneverCaptureIsClosed() {
+    void altXDoesNotOpenSettings() {
         RemixInputGate gate = new RemixInputGate();
 
-        assertSame(TOGGLE_MENU, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
+        assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
         assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true));
         assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true));
         assertSame(PASS, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false));
@@ -53,11 +52,11 @@ class RemixInputGateTest {
     }
 
     @Test
-    void altXClosesWheneverCaptureIsOpen() {
+    void altXStaysWithTheNativeOverlayWhenCaptureIsOpen() {
         RemixInputGate gate = new RemixInputGate();
         open(gate);
 
-        assertSame(TOGGLE_MENU, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
+        assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, true));
         assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_REPEAT, true));
         assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_RELEASE, true));
         assertSame(BLOCK, key(gate, GLFW.GLFW_KEY_X, GLFW.GLFW_PRESS, false));

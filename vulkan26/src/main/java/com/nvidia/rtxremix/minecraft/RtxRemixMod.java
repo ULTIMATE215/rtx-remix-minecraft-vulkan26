@@ -145,6 +145,15 @@ public class RtxRemixMod implements ClientModInitializer {
         }
     }
 
+    private static void saveRtxSettingsFromScreen() {
+        if (rtxSettings == null || rtxSettingsStore == null) return;
+        try {
+            rtxSettingsStore.saveChecked(rtxSettings);
+        } catch (java.io.IOException failure) {
+            throw new java.io.UncheckedIOException(failure);
+        }
+    }
+
     /** Applies the preset named by {@value #LAUNCH_PRESET_PROPERTY}, if any. */
     private static void applyLaunchPreset() {
         String name = System.getProperty(LAUNCH_PRESET_PROPERTY);
@@ -246,19 +255,7 @@ public class RtxRemixMod implements ClientModInitializer {
     }
 
     /**
-     * Opens the developer menu, or closes whichever Remix menu is open.
-     * Called from {@link KeyboardMixin} on ALT+X.
-     */
-    public static void toggleRemixMenu() {
-        if (REMIX_INPUT_GATE.isCaptureSessionOpen()) {
-            closeRemixMenu();
-        } else {
-            openRemixMenu(RemixInputGate.Menu.DEVELOPER);
-        }
-    }
-
-    /**
-     * Opens a Remix menu, which then owns all input until Alt+X or the menu's own
+     * Opens a Remix menu, which then owns all input until the menu's own
      * controls close it. Does nothing when a menu is already open.
      */
     public static void openRemixMenu(RemixInputGate.Menu menu) {
@@ -273,16 +270,6 @@ public class RtxRemixMod implements ClientModInitializer {
         }
         takeInputFromMinecraft();
         LOGGER.info("Remix menu open: {}", menu);
-    }
-
-    /** Closes the open Remix menu on Alt+X and returns input to Minecraft. */
-    private static void closeRemixMenu() {
-        if (!isRemixMenuAvailable()) {
-            return;
-        }
-        releaseRemixMenuCapture();
-        relockCursorUnlessScreenOpen();
-        LOGGER.info("Remix menu closed");
     }
 
     /**
@@ -437,7 +424,7 @@ public class RtxRemixMod implements ClientModInitializer {
                                     settingsButtonText,
                                     b -> client.gui.setScreen(
                                             new RtxSettingsScreen(
-                                                    screen, rtxSettings, RtxRemixMod::saveRtxSettings)))
+                                                    screen, rtxSettings, RtxRemixMod::saveRtxSettingsFromScreen)))
                             .build();
                     if (done != null) {
                         int lastBodyY = Integer.MIN_VALUE;
@@ -1085,6 +1072,19 @@ public class RtxRemixMod implements ClientModInitializer {
                                     "  " + s.ruleId().getPath() + ": " + s.drawn() + " / " + s.total()));
                         }
                         return 1;
+                    }))
+                .then(ClientCommands.literal("diagnoseui")
+                    .executes(context -> {
+                        try {
+                            Path directory = com.nvidia.rtxremix.minecraft.vulkan.UiFrameCapture.request(
+                                    FabricLoader.getInstance().getGameDir().resolve("screenshots"));
+                            context.getSource().sendFeedback(Component.translatable("rtxremix.uiCapture.started",directory.toString()));
+                            return 1;
+                        } catch (java.io.IOException | RuntimeException failure) {
+                            LOGGER.warn("Cannot start UI frame capture",failure);
+                            context.getSource().sendError(Component.translatable("rtxremix.uiCapture.failed"));
+                            return 0;
+                        }
                     }))
                 .then(ClientCommands.literal("dlss")
                     .executes(context -> {

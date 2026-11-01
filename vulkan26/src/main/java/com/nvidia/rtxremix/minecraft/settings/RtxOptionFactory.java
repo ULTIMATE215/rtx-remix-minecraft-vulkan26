@@ -252,7 +252,7 @@ final class RtxOptionFactory {
                 + logarithmicProgress * (1.0 - zeroSentinelEnd);
     }
 
-    private static Component floatValueText(String settingId, double value) {
+    static Component floatValueText(String settingId, double value) {
         String formatted = String.format(Locale.ROOT, "%.2f", value);
         if (!TERRAIN_EMISSION_MULTIPLIER_ID.equals(settingId)) {
             return Component.literal(formatted);
@@ -285,7 +285,7 @@ final class RtxOptionFactory {
         return Component.literal(Integer.toString(value));
     }
 
-    private static int sentinelSliderValue(String settingId) {
+    static int sentinelSliderValue(String settingId) {
         boolean hasSentinel = ENTITY_DISTANCE_ID.equals(settingId)
                 || LIGHT_DISTANCE_ID.equals(settingId);
         return hasSentinel ? SENTINEL_SLIDER_VALUE : -1;

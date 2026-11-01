@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.settings;
 
-import static java.util.Map.entry;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,137 +22,58 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
-/**
- * Every option row on the settings screens is a vanilla widget of fixed width
- * that draws {@code "<label>: <value>"} once, and text wider than the widget
- * scrolls as a marquee that clips the label at whichever edge it has reached.
- * The English strings are therefore authored to fit at the widest value each
- * row can show, and this test measures them with the default font's real
- * glyph advances, read from the Minecraft jar on the test classpath.
- */
+/** Measures the separate label/value columns of the flat settings screen with the game font. */
 class SettingsRowWidthTest {
-
-    /** {@code OptionListWidget} lays out two option widgets of this width per row. */
-    private static final int OPTION_WIDGET_WIDTH = 150;
-    /** Sliders and buttons inset their message by this many pixels on each side. */
-    private static final int WIDGET_TEXT_MARGIN = 2;
-    private static final int OPTION_TEXT_WIDTH = OPTION_WIDGET_WIDTH - 2 * WIDGET_TEXT_MARGIN;
-    /** The Block Lights table names each row in a {@code TextWidget} of this width. */
-    private static final int BLOCK_LIGHT_NAME_WIDTH = 150;
-    /** The landing and category screens pair two footer buttons of this width. */
-    private static final int FOOTER_BUTTON_WIDTH = 98;
-
-    /** Plain buttons on the settings screens and the width each is built with. */
-    private static final Map<String, Integer> BUTTON_WIDTHS = Map.of(
-            "rtxremix.settings.reset", FOOTER_BUTTON_WIDTH,
-            "rtxremix.settings.resetAll", FOOTER_BUTTON_WIDTH,
-            "rtxremix.settings.configure", OPTION_WIDGET_WIDTH,
-            "rtxremix.settings.openRemixMenu", OPTION_WIDGET_WIDTH);
-
-    /**
-     * Rows {@code RtxSettingsCategoryScreen.fullWidthRows} lays out one per
-     * line through {@code OptionListWidget.addSingleOptionEntry}, which builds
-     * the widget at this width.
-     */
-    private static final int FULL_WIDTH_OPTION_WIDTH = 310;
-    private static final int FULL_WIDTH_OPTION_TEXT_WIDTH = FULL_WIDTH_OPTION_WIDTH - 2 * WIDGET_TEXT_MARGIN;
-    private static final Set<String> FULL_WIDTH_ROWS = Set.of("rtxremix.setting.framerate.unfocused");
-
     private static final String LABEL_PREFIX = "rtxremix.setting.";
     private static final String TOOLTIP_SUFFIX = ".tip";
     private static final String BLOCK_LIGHT_NAME_PREFIX = "rtxremix.setting.blockLights.";
-
-    /**
-     * The widest value text each option row can display, as
-     * {@link RtxOptionFactory} formats it at the ends of the range declared in
-     * {@link RtxSettingsFactory}. A row missing here fails the test rather than
-     * going unmeasured.
-     */
-    private static final Map<String, String> WIDEST_VALUE = Map.ofEntries(
-            entry("rtxremix.setting.dist.autoFade", "OFF"),
-            entry("rtxremix.setting.dist.light", "Auto"),
-            entry("rtxremix.setting.dist.entity", "Auto"),
-            entry("rtxremix.setting.light.reach", "256"),
-            entry("rtxremix.setting.framerate.unfocused", "Unlimited"),
-            entry("rtxremix.setting.dlss.mode", "Ray Reconstruction"),
-            entry("rtxremix.setting.sky.enabled", "OFF"),
-            entry("rtxremix.setting.sky.ambient", "OFF"),
-            entry("rtxremix.setting.sky.haloFocus", "0.99"),
-            entry("rtxremix.setting.sky.minimumCelestialWeatherVisibility", "1.00"),
-            entry("rtxremix.setting.clouds.procedural", "Procedural"),
-            entry("rtxremix.setting.clouds.vanillaEdgeSmoothness", "1.99"),
-            entry("rtxremix.setting.clouds.size", "2.00"),
-            entry("rtxremix.setting.clouds.height", "-128.00"),
-            entry("rtxremix.setting.sky.sunIntensity", "100.00"),
-            entry("rtxremix.setting.sky.moonIntensity", "10.00"),
-            entry("rtxremix.setting.sky.dayAmbient", "5.00"),
-            entry("rtxremix.setting.sky.nightAmbient", "10.00"),
-            entry("rtxremix.setting.materials.terrainEmission", "50.00×"),
-            entry("rtxremix.setting.materials.smoothReliefMaps", "OFF"),
-            entry("rtxremix.setting.post.exposure", "2.00"),
-            entry("rtxremix.setting.post.shadows", "-5.00"),
-            entry("rtxremix.setting.post.highlights", "10.00"),
-            entry("rtxremix.setting.post.lowLightAdaptation", "-5.00"),
-            entry("rtxremix.setting.post.highLightAdaptation", "10.00"));
+    private static final int VALUE_WIDTH = 146;
+    private static final int LABEL_WIDTH = SettingsLayout.of(320,240).listWidth() - VALUE_WIDTH - 24;
+    private static final Map<String,Integer> BUTTON_WIDTHS = Map.of(
+            "rtxremix.settings.resetAll", SettingsLayout.of(320,240).footerWidth(),
+            "rtxremix.settings.undo", SettingsLayout.of(320,240).footerWidth(),
+            "rtxremix.settings.apply", SettingsLayout.of(320,240).footerWidth(),
+            "rtxremix.settings.resetGroup", 44);
 
     private final DefaultFont font = DefaultFont.load();
     private final Map<String, String> lang = loadLang();
 
     @Test
-    void everyOptionRowFitsItsWidgetAtItsWidestValue() {
+    void everyOptionLabelFitsItsColumnAtTheMinimumGuiWidth() {
         List<String> failures = new ArrayList<>();
-        for (Map.Entry<String, String> label : settingLabels().entrySet()) {
-            if (label.getKey().startsWith(BLOCK_LIGHT_NAME_PREFIX)) {
-                continue;
-            }
-            String widestValue = WIDEST_VALUE.get(label.getKey());
-            assertNotNull(widestValue, "register the widest value of " + label.getKey()
-                    + " in " + getClass().getSimpleName());
-            String row = label.getValue() + ": " + widestValue;
-            int width = font.width(row);
-            int textWidth = FULL_WIDTH_ROWS.contains(label.getKey())
-                    ? FULL_WIDTH_OPTION_TEXT_WIDTH : OPTION_TEXT_WIDTH;
-            if (width > textWidth) {
-                failures.add(String.format("%s is %d px, %d over: \"%s\"",
-                        label.getKey(), width, width - textWidth, row));
-            }
+        for (var entry : settingLabels().entrySet()) {
+            int width = font.width(entry.getValue());
+            if (width > LABEL_WIDTH) failures.add(entry.getKey() + " is " + width + " px: " + entry.getValue());
         }
-        assertTrue(failures.isEmpty(), String.join("\n", failures));
+        assertTrue(failures.isEmpty(),String.join("\n",failures));
     }
 
     @Test
-    void everyBlockLightNameFitsItsColumn() {
-        for (Map.Entry<String, String> label : settingLabels().entrySet()) {
-            if (!label.getKey().startsWith(BLOCK_LIGHT_NAME_PREFIX)) {
-                continue;
-            }
-            int width = font.width(label.getValue());
-            assertTrue(width <= BLOCK_LIGHT_NAME_WIDTH, String.format(
-                    "%s is %d px wide: \"%s\"", label.getKey(), width, label.getValue()));
+    void everyChoiceValueFitsWithoutScrolling() {
+        for (var entry : lang.entrySet()) if (entry.getKey().startsWith("rtxremix.settings.value.")) {
+            assertTrue(font.width(entry.getValue()) <= VALUE_WIDTH - 6,entry.toString());
+        }
+        for (String value : List.of("-128.00","256.00","50.00×","Unlimited")) {
+            assertTrue(font.width(value) <= VALUE_WIDTH - 6,value);
         }
     }
 
     @Test
     void everyButtonLabelFitsItsWidget() {
-        for (Map.Entry<String, Integer> button : BUTTON_WIDTHS.entrySet()) {
+        for (var button : BUTTON_WIDTHS.entrySet()) {
             String label = lang.get(button.getKey());
-            assertNotNull(label, button.getKey() + " has no label");
-            int width = font.width(label);
-            int textWidth = button.getValue() - 2 * WIDGET_TEXT_MARGIN;
-            assertTrue(width <= textWidth, String.format("%s is %d px, %d over: \"%s\"",
-                    button.getKey(), width, width - textWidth, label));
+            assertNotNull(label,button.getKey());
+            assertTrue(font.width(label) <= button.getValue() - 6,button.getKey() + ": " + label);
         }
     }
 
     @Test
-    void everyRegisteredWidestValueBelongsToALabel() {
-        for (String key : WIDEST_VALUE.keySet()) {
-            assertTrue(lang.containsKey(key), key + " is registered here but has no label");
-        }
+    void theMinimumLayoutKeepsIndependentLabelAndValueColumns() {
+        assertTrue(LABEL_WIDTH >= 120);
+        assertTrue(VALUE_WIDTH < SettingsLayout.of(320,240).listWidth() / 2);
     }
 
     private Map<String, String> settingLabels() {

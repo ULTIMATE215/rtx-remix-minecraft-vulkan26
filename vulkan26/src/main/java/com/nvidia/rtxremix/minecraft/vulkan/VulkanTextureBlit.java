@@ -30,14 +30,15 @@ public final class VulkanTextureBlit {
         encoder.execute(commands);
     }
 
-    static long image(GpuTextureView view) {
+    public static long image(GpuTextureView view) {
         if (!(view.texture() instanceof VulkanGpuTexture texture) || texture.isClosed() || view.isClosed()) {
             throw new IllegalArgumentException("A live Minecraft Vulkan texture is required");
         }
         return texture.vkImage();
     }
 
-    static void record(VkCommandBuffer commands, long source, int sourceMip, int sourceWidth, int sourceHeight,
+    /** Records a color transfer; callers own layout transitions and memory dependencies. */
+    public static void record(VkCommandBuffer commands, long source, int sourceMip, int sourceWidth, int sourceHeight,
                        long destination, int destinationMip, int destinationWidth, int destinationHeight,
                        boolean flipY, int filter, MemoryStack stack) {
         var blit = VkImageBlit.calloc(1, stack);

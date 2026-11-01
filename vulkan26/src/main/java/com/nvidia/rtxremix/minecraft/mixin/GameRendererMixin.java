@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
+import com.nvidia.rtxremix.minecraft.vulkan.UiFrameCapture;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
@@ -74,6 +75,7 @@ public abstract class GameRendererMixin {
     @Inject(method = "render", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/gui/render/GuiRenderer;render()V"))
     private void rtxremix$beginGuiScope(DeltaTracker delta, boolean renderLevel, CallbackInfo ci) {
+        UiFrameCapture.beforeGui();
         rtxremix$closeGuiScope();
         if (ProfileScope.isJavaScopeEnabled()) {
             rtxremix$guiScope = ProfileScope.begin("GameRenderer.render.gui")
@@ -83,6 +85,7 @@ public abstract class GameRendererMixin {
 
     @Inject(method = "render", at = @At("RETURN"))
     private void rtxremix$endGuiScope(DeltaTracker delta, boolean renderLevel, CallbackInfo ci) {
+        UiFrameCapture.afterGui();
         rtxremix$closeGuiScope();
     }
 

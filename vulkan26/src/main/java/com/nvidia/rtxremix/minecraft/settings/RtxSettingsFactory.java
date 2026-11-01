@@ -15,6 +15,7 @@ import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.UnfocusedFramerateLimit;
 import com.nvidia.rtxremix.minecraft.entity.RemixEntityPass;
+import com.nvidia.rtxremix.minecraft.cloud.CloudVolumeSettings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,11 +58,8 @@ public final class RtxSettingsFactory {
      * artist-authored controls expose their native values, so check the runtime
      * model as well as the range when adding one.
      *
-     * <p><b>The label must fit its widget.</b> Option rows are 150 px vanilla
-     * widgets that draw {@code Label: Value} with a 2 px margin, and wider text
-     * scrolls as a marquee that clips the label. {@code SettingsRowWidthTest}
-     * measures every label at its registered widest value with the real
-     * default-font advances, so a new setting also needs an entry there.
+     * <p>The flat screen renders labels and values separately. Long descriptions
+     * belong in the sidebar/tooltip, rather than in the value control.
      */
     public static RtxSettings build(RemixRenderer renderer) {
         List<RtxSetting<?>> list = new ArrayList<>();
@@ -70,6 +68,9 @@ public final class RtxSettingsFactory {
         RemixEntityPass entities = renderer.getEntityPass();
         PostProcessingSettings postProcessing = renderer.getPostProcessingSettings();
         list.add(renderer.getDlssSettings().setting());
+        list.add(renderer.getDlssSettings().frameGenerationSetting());
+        NativeGraphicsSettings.addTo(list, renderer.getRemixApi()::getConfigVariableResolved,
+                renderer.getRemixApi()::setConfigVariable);
 
         // --- Render distances (live-bound to managers) ---
         list.add(RtxSetting.ofBool("dist.autoFade", SettingGroup.RENDER_DISTANCE,
@@ -137,6 +138,22 @@ public final class RtxSettingsFactory {
                 SkyRenderer::getMinimumCelestialWeatherVisibility,
                 SkyRenderer::setMinimumCelestialWeatherVisibility));
 
+        CloudVolumeSettings clouds = renderer.getCloudRenderer().getVolumeSettings();
+        list.add(RtxSetting.ofBool("clouds.volumetric", SettingGroup.CLOUDS,
+                "rtxremix.setting.clouds.volumetric", "rtxremix.setting.clouds.volumetric.tip",
+                true, clouds::isEnabled, clouds::setEnabled));
+        list.add(RtxSetting.ofChoice("clouds.quality", SettingGroup.CLOUDS,
+                "rtxremix.setting.clouds.quality", "rtxremix.setting.clouds.quality.tip",
+                CloudVolumeSettings.QUALITIES, "rtxremix.settings.value.cloudQuality.", "balanced",
+                clouds::getQuality, clouds::setQuality));
+        list.add(floatSetting("clouds.thickness", SettingGroup.CLOUDS, "rtxremix.setting.clouds.thickness",
+                16, 256, clouds::getThickness, clouds::setThickness));
+        list.add(floatSetting("clouds.coverage", SettingGroup.CLOUDS, "rtxremix.setting.clouds.coverage",
+                0, 1, clouds::getCoverage, clouds::setCoverage));
+        list.add(floatSetting("clouds.density", SettingGroup.CLOUDS, "rtxremix.setting.clouds.density",
+                0.1, 3, clouds::getDensity, clouds::setDensity));
+        list.add(floatSetting("clouds.windSpeed", SettingGroup.CLOUDS, "rtxremix.setting.clouds.windSpeed",
+                0, 4, clouds::getWindSpeed, clouds::setWindSpeed));
         list.add(RtxSetting.ofBool("clouds.procedural", SettingGroup.CLOUDS,
                 "rtxremix.setting.clouds.procedural",
                 "rtxremix.setting.clouds.procedural.tip",
@@ -272,8 +289,8 @@ public final class RtxSettingsFactory {
         return Optional.of(RtxSetting.ofBool(id, group, labelKey, labelKey + ".tip", value[0],
                 () -> value[0],
                 v -> {
-                    value[0] = v;
                     configWriter.accept(option, Boolean.toString(v));
+                    value[0] = v;
                 }));
     }
 

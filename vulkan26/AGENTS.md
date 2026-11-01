@@ -19,6 +19,26 @@ Minecraft owns its Vulkan device, queues, and command buffers. Submit game-side
 commands through its encoder and retire imported resources after GPU completion.
 Keep a single owner of final presentation and preserve Remix's native menus.
 
+Settings open from the game's Options screen, without a menu hotkey. The flat,
+categorized screen uses `SettingsDraft`: reset and undo modify only the draft;
+Apply batches native writes, terrain/material rebuilds, and checked persistence.
+Keep English and Simplified Chinese labels, choices, and tips in sync. DLSS model
+and frame generation are startup preferences, never live device reconfiguration.
+Native overlay input capture remains active for menus shown by the runtime.
+
+Volumetric clouds use `CloudVolumeResources` and `cloud_volume.comp` on Minecraft's
+Vulkan encoder. Composite the same-frame volume/depth after Remix Submit and
+before weather and the HUD; never modify the shared Remix image in the cloud pass.
+Retire descriptors and images through the encoder's GPU lifetime. The volume
+covers primary rays, not native reflections or ground shadows; legacy mesh clouds
+remain selectable and are the failure fallback. The headless cloud GPU fixture
+exercises production resources but does not replace signed-in Windows validation.
+Do not copy code or assets from the all-rights-reserved ITRP reference pack.
+
+`/rtx diagnoseui` records paired images around the GUI draw, before native Present.
+Treat it as an opt-in diagnostic, not a fix or evidence that native temporal
+history excludes the HUD. Rendering-order JVM tests cannot prove that boundary.
+
 Preserve the parent's resource ownership, generation checks, retained assets,
 terrain budgets, and reference counts. Adapt policies to 26.2's actual readers:
 vanilla terrain workers still need immutable client-light snapshots.

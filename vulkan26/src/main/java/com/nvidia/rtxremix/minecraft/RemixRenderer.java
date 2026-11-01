@@ -268,6 +268,8 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
             // the matching lighting/denoiser settings. Menu changes apply next launch.
             new RtxSettingsStore(FabricLoader.getInstance().getConfigDir().resolve("rtxremix.json"))
                     .loadSetting(dlssSettings.setting());
+            new RtxSettingsStore(FabricLoader.getInstance().getConfigDir().resolve("rtxremix.json"))
+                    .loadSetting(dlssSettings.frameGenerationSetting());
             dlssSettings.applyBeforeStartup(remixApi::setConfigVariable);
             LOGGER.info("DLSS startup selection: {}", dlssSettings.setting().get());
 
@@ -1341,7 +1343,9 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
                 submitFrame();
             }
             vulkanInterop.acquire(remixApi.dxvkGetInteropInfo());
-            return vulkanInterop.copyOutput();
+            GpuTextureView scene = vulkanInterop.copyOutput();
+            return RtxRemixMod.isRtxEnabled() && RtxRemixMod.isWorldActive() && cloudRenderer != null
+                    ? cloudRenderer.compositeVolume(scene, vulkanInterop.depthTexture()) : scene;
         }
     }
 

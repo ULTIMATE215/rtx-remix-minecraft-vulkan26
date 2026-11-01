@@ -4,7 +4,6 @@
  */
 package com.nvidia.rtxremix.minecraft.input;
 
-import org.lwjgl.glfw.GLFW;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -52,8 +51,7 @@ public final class RemixInputGate {
 
     public enum KeyDecision {
         PASS,
-        BLOCK,
-        TOGGLE_MENU
+        BLOCK
     }
 
     /** What {@link #followVisibility} found, and the capture change it made. */
@@ -81,17 +79,9 @@ public final class RemixInputGate {
      */
     private final byte[] resolvedVisibility = new byte[RESOLVED_HIDDEN_MENU.length];
 
-    /** Decides whether Minecraft may handle a key event. */
+    /** Routes input for native overlays; settings are opened only through game menus. */
     public KeyDecision onKey(int key, int action, boolean altDown, boolean controlDown) {
-        boolean altX = action == GLFW.GLFW_PRESS
-                && key == GLFW.GLFW_KEY_X
-                && altDown
-                && !controlDown;
-        if (captureSessionOpen) {
-            return altX ? KeyDecision.TOGGLE_MENU : KeyDecision.BLOCK;
-        }
-
-        return altX ? KeyDecision.TOGGLE_MENU : KeyDecision.PASS;
+        return captureSessionOpen ? KeyDecision.BLOCK : KeyDecision.PASS;
     }
 
     public boolean isCaptureSessionOpen() {

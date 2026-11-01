@@ -1,0 +1,215 @@
+#version 450
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Independently implemented density integration. No shader or noise assets from
+// reference shader packs are included. Passes: 0 = noise, 1 = volume, 2 = resolve.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(binding = 0, rgba8) uniform image3D noiseOutput;
+layout(binding = 1) uniform sampler3D cloudNoise;
+layout(binding = 2) uniform sampler2D sceneColor;
+layout(binding = 3) uniform sampler2D sceneDepth;
+layout(binding = 4, rgba16f) uniform image2D cloudVolume;
+layout(binding = 5, rgba16f) uniform image2D resolvedColor;
+layout(push_constant) uniform Parameters {
+    vec4 camera;  // wind-relative, periodic world x/z, world y, layer bottom
+    vec4 forward; // xyz basis, tan(vertical FOV / 2)
+    vec4 right;   // xyz basis, aspect ratio
+    vec4 up;      // xyz basis, ray-march steps
+    vec4 layer;   // thickness, coverage, extinction multiplier, cloud size
+    vec4 light;   // direction to key light, intensity
+    vec4 tint;    // environment cloud color, rain strength
+    vec4 extra;   // sun elevation, cloud alpha, world minimum altitude, pass
+} p;
+
+const float PLANET_RADIUS = 6371000.0;
+const float MAX_DISTANCE = 180000.0;
+const float NEAR_PLANE = 0.05;
+const float FAR_PLANE = 1000.0;
+
+uint hash(uint x) {
+    x ^= x >> 16; x *= 0x7feb352du;
+    x ^= x >> 15; x *= 0x846ca68bu;
+    return x ^ (x >> 16);
+}
+float randomCell(ivec3 v, int period, uint salt) {
+    uvec3 u = uvec3((v % period + period) % period);
+    return float(hash(u.x + 131u * u.y + 17161u * u.z + salt)) / 4294967295.0;
+}
+float valueNoise(vec3 v, int period) {
+    ivec3 c = ivec3(floor(v));
+    vec3 f = fract(v); f = f * f * (3.0 - 2.0 * f);
+    float sum = 0.0;
+    for (int z = 0; z < 2; z++) for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) {
+        vec3 w = mix(1.0 - f, f, vec3(x, y, z));
+        sum += w.x * w.y * w.z * randomCell(c + ivec3(x,y,z), period, 4793u);
+    }
+    return sum;
+}
+float cellular(vec3 v, int period) {
+    ivec3 c = ivec3(floor(v));
+    vec3 f = fract(v);
+    float nearest = 4.0;
+    for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        ivec3 n = c + ivec3(x,y,z);
+        vec3 center = vec3(randomCell(n,period,17u),randomCell(n,period,149u),randomCell(n,period,877u));
+        vec3 d = vec3(x,y,z) + center - f;
+        nearest = min(nearest, dot(d,d));
+    }
+    return 1.0 - clamp(sqrt(nearest), 0.0, 1.0);
+}
+void generateNoise(ivec3 pixel) {
+    if (any(greaterThanEqual(pixel, imageSize(noiseOutput)))) return;
+    vec3 uv = (vec3(pixel) + 0.5) / vec3(imageSize(noiseOutput));
+    float shape = valueNoise(uv * 4.0, 4) * 0.58 + cellular(uv * 8.0, 8) * 0.42;
+    float erosion = cellular(uv * 16.0, 16) * 0.7 + cellular(uv * 32.0, 32) * 0.3;
+    float weather = valueNoise(uv * 4.0, 4);
+    imageStore(noiseOutput, pixel, vec4(shape, erosion, weather, 1.0));
+}
+
+// The cancellation-resistant form also works close to sea level and at the horizon.
+vec2 sphereRoots(float altitude, vec3 direction) {
+    float b = (PLANET_RADIUS + p.camera.y) * direction.y;
+    float c = (p.camera.y - altitude) * (2.0 * PLANET_RADIUS + p.camera.y + altitude);
+    float d = b * b - c;
+    if (d < 0.0) return vec2(-1.0);
+    float q = -b - (b >= 0.0 ? 1.0 : -1.0) * sqrt(d);
+    if (abs(q) < 0.00001) return vec2(0.0);
+    vec2 roots = vec2(q, c / q);
+    return vec2(min(roots.x, roots.y), max(roots.x, roots.y));
+}
+vec2 cloudInterval(vec3 direction) {
+    vec2 outer = sphereRoots(p.camera.w + p.layer.x, direction);
+    if (outer.y <= 0.0) return vec2(0.0);
+    float start = max(outer.x, 0.0), end = min(outer.y, MAX_DISTANCE);
+    vec2 inner = sphereRoots(p.camera.w, direction);
+    if (p.camera.y < p.camera.w) {
+        start = max(start, inner.y);
+    } else if (inner.x >= start && inner.x >= 0.0) {
+        end = min(end, inner.x);
+    }
+    // Preserve clouds slightly below the horizontal at altitude, while excluding
+    // the far hemisphere behind the planet. Terrain handles nearer local occluders.
+    vec2 ground = sphereRoots(p.extra.z, direction);
+    if (ground.x >= 0.0) end = min(end, ground.x);
+    return vec2(start, max(start, end));
+}
+float altitude(vec3 offset) {
+    float y = p.camera.y + offset.y;
+    float horizontal2 = dot(offset.xz, offset.xz);
+    return (y * (2.0 * PLANET_RADIUS + y) + horizontal2)
+        / (sqrt((PLANET_RADIUS + y) * (PLANET_RADIUS + y) + horizontal2) + PLANET_RADIUS);
+}
+float densityAt(vec3 offset, bool detail) {
+    float h = (altitude(offset) - p.camera.w) / p.layer.x;
+    if (h <= 0.0 || h >= 1.0 || p.layer.y <= 0.0) return 0.0;
+    vec3 world = vec3(p.camera.x + offset.x / p.layer.w, (p.camera.y + offset.y) / p.layer.w,
+                      p.camera.z + offset.z / p.layer.w);
+    vec3 uv = world / 1024.0;
+    float weather = textureLod(cloudNoise, vec3(world.x / 16384.0, 0.37, world.z / 16384.0), 0.0).b;
+    float coverage = clamp(p.layer.y + (weather - 0.5) * 0.65 + p.tint.w * 0.25, 0.0, 0.98);
+    float shape = textureLod(cloudNoise, uv, 0.0).r;
+    // Flat base and rounded tops, with progressively narrower upper cloud bodies.
+    float profile = smoothstep(0.0, 0.13, h) * (1.0 - smoothstep(0.50, 1.0, h));
+    float threshold = 0.76 - coverage * 0.57 + h * h * 0.09;
+    float d = clamp((shape - threshold) * 3.8, 0.0, 1.0) * profile;
+    if (detail && d > 0.0) {
+        float erosion = textureLod(cloudNoise, uv * 3.0 + vec3(0.13,0.0,0.27), 0.0).g;
+        d = max(0.0, d - (1.0 - erosion) * 0.16 * (1.0 - d));
+    }
+    return d * p.layer.z * 0.065;
+}
+vec3 rayDirection(vec2 uv) {
+    vec2 ndc = uv * 2.0 - 1.0;
+    // Inputs have already been flipped once by VulkanInterop into Minecraft's target convention.
+    return normalize(p.forward.xyz + p.right.xyz * (ndc.x * p.forward.w * p.right.w)
+                     + p.up.xyz * (ndc.y * p.forward.w));
+}
+float viewDepth(vec2 uv) {
+    ivec2 size = textureSize(sceneDepth, 0);
+    float z = texelFetch(sceneDepth, clamp(ivec2(uv * vec2(size)), ivec2(0), size - 1), 0).r;
+    if (z >= 0.999999 || isnan(z)) return MAX_DISTANCE;
+    return NEAR_PLANE * FAR_PLANE / max(FAR_PLANE - z * (FAR_PLANE - NEAR_PLANE), 0.00001);
+}
+float lightTransmission(vec3 offset) {
+    float optical = 0.0, stepLength = max(4.0, p.layer.x / 16.0), distance = 0.0;
+    for (int i = 0; i < 6; i++) {
+        optical += densityAt(offset + p.light.xyz * (distance + stepLength * 0.5), false) * stepLength;
+        distance += stepLength; stepLength *= 1.65;
+    }
+    // Approximate multiple scattering as a broader, attenuated second lobe.
+    return exp(-optical) * 0.8 + exp(-optical * 0.25) * 0.2;
+}
+vec4 marchCloud(vec2 uv, float depth) {
+    vec3 direction = rayDirection(uv);
+    vec2 interval = cloudInterval(direction);
+    interval.y = min(interval.y, depth / max(dot(direction, p.forward.xyz), 0.001));
+    if (interval.y <= interval.x || p.extra.y <= 0.0) return vec4(0.0,0.0,0.0,1.0);
+    int count = int(p.up.w);
+    float stepLength = (interval.y - interval.x) / float(count);
+    // Stable stratification: no frame counter, animated dithering, or cloud temporal history.
+    ivec2 pixel = ivec2(uv * vec2(textureSize(sceneColor,0)));
+    float jitter = float(hash(uint(pixel.x) + uint(pixel.y) * 65537u) & 65535u) / 65536.0;
+    float distance = interval.x + stepLength * (0.2 + 0.6 * jitter);
+    float transmittance = 1.0;
+    vec3 scattering = vec3(0.0);
+    float sunUp = smoothstep(-0.10, 0.18, p.extra.x);
+    vec3 lightColor = mix(vec3(0.32,0.42,0.70), mix(vec3(1.0,0.47,0.25),vec3(1.0,0.98,0.94),sunUp), sunUp);
+    float mu = dot(direction, p.light.xyz);
+    float g = 0.55;
+    float phase = (1.0 - g*g) / pow(max(1.0 + g*g - 2.0*g*mu,0.001),1.5);
+    phase = 0.55 + 0.30 * phase;
+    vec3 environment = pow(clamp(p.tint.rgb, 0.0, 1.0), vec3(2.2));
+    for (int i = 0; i < count; i++, distance += stepLength) {
+        vec3 offset = direction * distance;
+        float extinction = densityAt(offset, distance < 18000.0);
+        if (extinction <= 0.00001) continue;
+        float sampleTransmittance = exp(-extinction * stepLength);
+        float h = clamp((altitude(offset) - p.camera.w) / p.layer.x, 0.0, 1.0);
+        vec3 ambient = environment * mix(0.12,0.48,h) + vec3(0.004,0.008,0.018);
+        vec3 radiance = ambient + lightColor * p.light.w * phase * lightTransmission(offset);
+        float haze = 1.0 - exp(-distance / 45000.0);
+        radiance = mix(radiance, environment * 0.7, haze);
+        scattering += transmittance * (1.0 - sampleTransmittance) * radiance;
+        transmittance *= sampleTransmittance;
+        if (transmittance < 0.008) break;
+    }
+    return vec4(scattering * p.extra.y, mix(1.0,transmittance,p.extra.y));
+}
+void resolve(ivec2 pixel) {
+    ivec2 size = imageSize(resolvedColor);
+    if (any(greaterThanEqual(pixel,size))) return;
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    float depth = viewDepth(uv);
+    ivec2 volumeSize = imageSize(cloudVolume);
+    vec2 grid = uv * vec2(volumeSize) - 0.5;
+    ivec2 base = ivec2(floor(grid));
+    vec2 fraction = fract(grid);
+    vec4 volume = vec4(0.0);
+    float weights = 0.0;
+    for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) {
+        ivec2 neighbor = clamp(base + ivec2(x,y),ivec2(0),volumeSize - 1);
+        vec2 sampleUv = (vec2(neighbor) + 0.5) / vec2(volumeSize);
+        float neighborDepth = viewDepth(sampleUv);
+        vec2 spatial = mix(1.0 - fraction,fraction,vec2(x,y));
+        // Reject samples across silhouettes. If all four miss, integrate this pixel directly.
+        float weight = spatial.x * spatial.y * float(abs(depth - neighborDepth) <= max(1.0, depth * 0.02));
+        volume += imageLoad(cloudVolume,neighbor) * weight;
+        weights += weight;
+    }
+    volume = weights > 0.001 ? volume / weights : marchCloud(uv,depth);
+    vec4 scene = texelFetch(sceneColor, pixel, 0);
+    vec3 linear = pow(max(scene.rgb,vec3(0.0)),vec3(2.2));
+    vec3 color = linear * volume.a + volume.rgb;
+    imageStore(resolvedColor,pixel,vec4(pow(max(color,vec3(0.0)),vec3(1.0 / 2.2)),scene.a));
+}
+void main() {
+    ivec3 pixel = ivec3(gl_GlobalInvocationID);
+    if (p.extra.w < 0.5) generateNoise(pixel);
+    else if (p.extra.w < 1.5) {
+        ivec2 size = imageSize(cloudVolume);
+        if (any(greaterThanEqual(pixel.xy,size))) return;
+        vec2 uv = (vec2(pixel.xy) + 0.5) / vec2(size);
+        imageStore(cloudVolume,pixel.xy,marchCloud(uv,viewDepth(uv)));
+    } else resolve(pixel.xy);
+}

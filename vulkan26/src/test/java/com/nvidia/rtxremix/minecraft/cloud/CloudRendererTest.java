@@ -13,8 +13,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CloudRendererTest {
     @Test
-    void defaultsToVanillaClouds() {
-        assertFalse(new CloudRenderer(null).isProceduralClouds());
+    void defaultsToVolumetricCloudsWithClassicMeshesAvailableAsFallback() {
+        CloudRenderer renderer = new CloudRenderer(null);
+        assertTrue(renderer.getVolumeSettings().isEnabled());
+        assertFalse(renderer.isProceduralClouds());
+    }
+
+    private static CloudRenderer legacyRenderer() {
+        CloudRenderer renderer = new CloudRenderer(null);
+        renderer.getVolumeSettings().setEnabled(false);
+        return renderer;
     }
 
     @Test
@@ -58,8 +66,9 @@ class CloudRendererTest {
 
     @Test
     void paletteFailureFallsBackToVanillaUntilCleanupResetsIt() {
-        CloudRenderer renderer = new CloudRenderer(null);
+        CloudRenderer renderer = legacyRenderer();
         renderer.setProceduralClouds(true);
+        renderer.getVolumeSettings().setEnabled(false);
         long failedEpoch = renderer.paletteGenerationEpoch();
 
         assertThrows(IllegalStateException.class, () -> renderer.publishPaletteResult(
@@ -78,8 +87,9 @@ class CloudRendererTest {
 
     @Test
     void vanillaFailureFallsBackUntilChunkInvalidationResetsIt() {
-        CloudRenderer renderer = new CloudRenderer(null);
+        CloudRenderer renderer = legacyRenderer();
         renderer.setProceduralClouds(false);
+        renderer.getVolumeSettings().setEnabled(false);
         long failedEpoch = renderer.vanillaGenerationEpoch();
 
         assertThrows(IllegalStateException.class, () -> renderer.publishVanillaResult(
@@ -104,6 +114,7 @@ class CloudRendererTest {
                     throw creationFailure;
                 });
         procedural.setProceduralClouds(true);
+        procedural.getVolumeSettings().setEnabled(false);
         long paletteEpoch = procedural.paletteGenerationEpoch();
         IllegalStateException paletteFailure = assertThrows(
                 IllegalStateException.class,
@@ -122,6 +133,7 @@ class CloudRendererTest {
                     throw creationFailure;
                 });
         vanilla.setProceduralClouds(false);
+        vanilla.getVolumeSettings().setEnabled(false);
         long vanillaEpoch = vanilla.vanillaGenerationEpoch();
         IllegalStateException vanillaFailure = assertThrows(
                 IllegalStateException.class,

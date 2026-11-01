@@ -98,19 +98,63 @@ the world; F3 statistics and extra JVM arguments are not required. A null pointe
 inside a section task is reported with its section position and original cause
 instead of being silently treated as buffer-pool exhaustion by the dispatcher.
 
-The runtime's view-distance fade also applies to cloud geometry. Its horizontal
-distance mode can leave a circular cloud patch above the camera. To disable that
-clipping, close Minecraft and change `rtx.viewDistance.distanceMode = 0` in the
-instance's `rtx.conf`, then restart. This also disables distant terrain fading;
-the pinned runtime has no per-cloud exemption. Restore `3` to restore the shipped
-fade mode. `/rtx viewdistance auto off` only restores the 32-chunk fade distances
-and does not turn the fade off. This setting does not fix missing terrain captures.
-
 World-saved zone definitions use `data/minecraft/rtx_remix_zones.dat` in 26.2.
 When opening a world with the parent's `data/rtx_remix_zones.dat`, the mod
 imports it before reading saved zones. It keeps the original file and uses an
 existing 26.2 file in preference to the legacy copy. World conf profiles stay
 under the save's `rtx-remix/confs/` directory.
+
+## Settings and clouds
+
+Open **Options → RTX Remix Settings** from the title or pause menu. The flat
+settings page has category tabs, scrolling rows, and an explanation panel on
+wide windows (tooltips on small windows). Simplified Chinese covers the labels,
+choices, and explanations. There is no settings-opening hotkey; Alt+X no longer
+opens the native menu. Automatically shown Remix overlays still capture input.
+
+Changes stay pending until **Apply**. **Undo** restores the last applied values;
+group and global resets also wait for Apply. Leaving with pending changes asks
+whether to discard them. A failed apply or save stays retryable. DLSS model and
+frame-generation preferences take effect on the next Minecraft launch; their
+labels and descriptions indicate that a restart is required.
+
+**Quality → Clouds → Volumetric clouds** enables a three-dimensional cloud layer
+by default. Vulkan compute integrates density, light extinction, and cloud
+self-shadowing through a curved atmosphere, including the distant horizon and
+views from inside or above the layer. The layer follows world time and weather;
+quality, thickness, coverage, density, wind speed, height, and size are adjustable.
+Minecraft's own Clouds setting must also be enabled.
+
+Clouds are composited with the same frame's scene depth after Remix reconstruction
+and before weather and the HUD. They use no temporal history and are independent
+of Remix's circular geometry fade. The current volume covers the primary view;
+it does **not** contribute to native reflections or shadows on terrain. Disable
+Volumetric clouds to use the previous mesh clouds for those effects. Mesh clouds
+retain the runtime's distance fade. A failed volume initialization logs the cause
+and falls back to mesh clouds until resources are reloaded.
+
+The cloud shader and periodic noise are independently implemented. The ITRP
+reference informed the volume-rendering approach; none of its shader code or
+assets is included.
+
+## Diagnosing HUD trails
+
+The hotbar is drawn after world submission and Minecraft's post effects. Trails
+reported during movement still require Windows client evidence; the native
+presentation and frame-generation stages have not been ruled out.
+
+Run **`/rtx diagnoseui`**, close chat, and move the camera. After a two-second
+delay the mod records eight pairs of images, immediately before and after HUD
+drawing, under `screenshots/rtx-ui-<timestamp>/`. `render-modes.txt` records the
+resolved DLSS, frame-generation, and sparse-rendering options. GPU readback and
+PNG writing are asynchronous; captures stop on leaving the world or disabling
+RTX. The command is opt-in and does not change graphics settings.
+
+These images precede native presentation. Trails already visible before the HUD
+point to an earlier stage; clean pairs with visible on-screen trails narrow the
+problem to a later stage. A frame-generation comparison can be made under
+**Performance → DLSS → Frame gen (restart)** by applying Off and restarting.
+This diagnostic is not a HUD ghosting fix.
 
 ## DLSS 4.5
 
@@ -135,7 +179,8 @@ by the selection for the next launch. This reports configuration; a driver
 override or a feature fallback can affect the model NGX ultimately executes.
 
 M is optimized for Performance and L for Ultra Performance. The selection
-preserves your DLSS quality mode; adjust that separately in Alt+X. The RTX 4070
+preserves your DLSS quality mode; adjust it in the same settings group's
+**DLSS quality** control. The RTX 4070
 Laptop supports these SR models, whose GPU cost can differ from the older models.
 
 This runtime uses SR and Ray Reconstruction as alternative paths. **Sparse

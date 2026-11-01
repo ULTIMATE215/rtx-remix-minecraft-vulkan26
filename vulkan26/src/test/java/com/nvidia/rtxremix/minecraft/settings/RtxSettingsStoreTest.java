@@ -6,10 +6,12 @@ package com.nvidia.rtxremix.minecraft.settings;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,6 +43,27 @@ class RtxSettingsStoreTest {
         assertEquals(3.5, f2[0]);
         assertEquals(42, i2[0]);
         assertFalse(b2[0]);
+    }
+
+    @Test
+    void checkedSaveReportsReplacementFailureAndCanRetry(@TempDir Path dir) throws Exception {
+        Path file = Files.createDirectory(dir.resolve("rtxremix.json"));
+        Path retained = file.resolve("retained.txt");
+        Files.writeString(retained, "existing contents");
+        RtxSettingsStore store = new RtxSettingsStore(file);
+        RtxSettings settings = registryWith(new double[]{3.5}, new int[]{42}, new boolean[]{false});
+
+        assertThrows(IOException.class, () -> store.saveChecked(settings));
+        assertEquals("existing contents", Files.readString(retained));
+        try (var entries = Files.list(dir)) {
+            assertEquals(List.of(file), entries.toList(), "failed writes must remove temporary files");
+        }
+
+        Files.delete(retained);
+        Files.delete(file);
+        store.saveChecked(settings);
+        assertEquals(42, JsonParser.parseString(Files.readString(file)).getAsJsonObject()
+                .getAsJsonObject("settings").get("i").getAsInt());
     }
 
     @Test

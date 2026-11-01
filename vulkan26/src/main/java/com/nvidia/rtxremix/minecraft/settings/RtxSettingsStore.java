@@ -39,6 +39,15 @@ public final class RtxSettingsStore {
     }
 
     public void save(RtxSettings settings) {
+        try {
+            saveChecked(settings);
+        } catch (IOException e) {
+            LOGGER.warn("Failed to save RTX settings to {}", file, e);
+        }
+    }
+
+    /** Settings screens surface a write failure and let the user retry Apply. */
+    public void saveChecked(RtxSettings settings) throws IOException {
         JsonObject root = new JsonObject();
         root.addProperty("version", VERSION);
         JsonObject values = new JsonObject();
@@ -54,19 +63,24 @@ public final class RtxSettingsStore {
             }
         }
         root.add("settings", values);
+        if (values.size() == 0) {
+            Files.deleteIfExists(file);
+            return;
+        }
+        if (file.getParent() != null) Files.createDirectories(file.getParent());
+        Path temporary = Files.createTempFile(file.toAbsolutePath().getParent(), "rtxremix-", ".json.tmp");
         try {
-            if (values.size() == 0) {
-                Files.deleteIfExists(file);
-                return;
-            }
-            if (file.getParent() != null) {
-                Files.createDirectories(file.getParent());
-            }
-            try (Writer w = new OutputStreamWriter(Files.newOutputStream(file), StandardCharsets.UTF_8)) {
+            try (Writer w = new OutputStreamWriter(Files.newOutputStream(temporary), StandardCharsets.UTF_8)) {
                 GSON.toJson(root, w);
             }
-        } catch (IOException e) {
-            LOGGER.warn("Failed to save RTX settings to {}", file, e);
+            try {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
         }
     }
 

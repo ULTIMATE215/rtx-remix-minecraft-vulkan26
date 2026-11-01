@@ -42,6 +42,32 @@ class DlssSettingsTest {
     }
 
     @ParameterizedTest
+    @CsvSource({"off,false", "on,true"})
+    void frameGenerationPersistsAndAppliesWithTheDefaultDlssPath(
+            String selection, String enabled, @TempDir Path dir) throws Exception {
+        DlssSettings current = new DlssSettings();
+        current.frameGenerationSetting().apply(selection);
+        RtxSettingsStore store = new RtxSettingsStore(dir.resolve("rtxremix.json"));
+        store.saveChecked(new RtxSettings(List.of(current.setting(), current.frameGenerationSetting())));
+
+        DlssSettings nextLaunch = new DlssSettings();
+        store.loadSetting(nextLaunch.setting());
+        store.loadSetting(nextLaunch.frameGenerationSetting());
+        Map<String, String> writes = new HashMap<>();
+        nextLaunch.applyBeforeStartup(writes::put);
+
+        assertEquals(DlssSettings.REMIX, nextLaunch.setting().get());
+        assertEquals(selection, nextLaunch.frameGenerationSetting().get());
+        assertEquals(Map.of("rtx.dlfg.enable", enabled), writes,
+                "an explicit frame-generation preference must apply even without a DLSS model override");
+
+        nextLaunch.frameGenerationSetting().reset();
+        writes.clear();
+        nextLaunch.applyBeforeStartup(writes::put);
+        assertTrue(writes.isEmpty(), "Runtime default delegates to Remix's saved preference");
+    }
+
+    @ParameterizedTest
     @CsvSource({"sr45,13,M", "sr45-l,12,L"})
     void aSavedSrModeSelectsTheActualSrPathAtNextStartup(
             String mode, String preset, String presetName, @TempDir Path dir) {

@@ -8,6 +8,7 @@ package com.nvidia.rtxremix.minecraft.settings;
 public enum SettingGroup {
     RENDER_DISTANCE(SettingCategory.PERFORMANCE, "rtxremix.settings.group.renderDistance"),
     DLSS(SettingCategory.PERFORMANCE, "rtxremix.settings.group.dlss"),
+    SPARSE_RENDERING(SettingCategory.PERFORMANCE, "rtxremix.settings.group.sparse"),
     FRAMERATE(SettingCategory.PERFORMANCE, "rtxremix.settings.group.framerate"),
     SKY(SettingCategory.LIGHTING, "rtxremix.settings.group.sky"),
     CLOUDS(SettingCategory.LIGHTING, "rtxremix.settings.group.clouds"),

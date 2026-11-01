@@ -20,9 +20,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Routes keyboard input through the Remix overlay gate and intercepts the mod's raw shortcuts:
- * Alt+X without Control toggles the overlay, and while its capture session is open every key
- * and character is withheld from Minecraft. Plain R toggles camera recording once an in-game
+ * Routes keyboard input through the Remix overlay gate. While a native overlay's capture
+ * session is open every key and character is withheld from Minecraft. Settings have no
+ * opening shortcut. Plain R toggles camera recording once an in-game
  * command has armed it, and = and - scrub time of day while recording. Injecting into
  * {@code KeyboardHandler.keyPress} receives the modifier mask captured by GLFW with the
  * key event. Matched shortcuts cancel the event so vanilla does not also
@@ -62,12 +62,6 @@ public class KeyboardMixin implements RemixKeyboardAccess {
         if (decision == RemixInputGate.KeyDecision.BLOCK) {
             client.getFramerateLimitTracker().onInputReceived();
             ci.cancel();
-            return;
-        }
-        if (decision == RemixInputGate.KeyDecision.TOGGLE_MENU) {
-            client.getFramerateLimitTracker().onInputReceived();
-            ci.cancel();
-            RtxRemixMod.toggleRemixMenu();
             return;
         }
         if (client.gui.screen() != null
