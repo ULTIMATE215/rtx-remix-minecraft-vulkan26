@@ -126,17 +126,30 @@ class CopperBeaconBlockEntityTest {
     }
 
     @Test
-    void lensTexturesMatchTheSixPixelGeometry() throws IOException {
+    void lensPixelArtDoesNotLowerTheSharedBlockAtlasMipLevel() throws IOException {
         for (String path : new String[]{
                 "assets/rtx-remix-renderer/textures/block/copper_beacon_lens.png",
-                "assets/rtx-remix-renderer/textures/block/copper_beacon_lens_s.png"}) {
+                "assets/rtx-remix-renderer/textures/block/copper_beacon_lens_s.png",
+                "assets/rtx-remix-renderer/textures/block/copper_beacon_lens_unlit.png"}) {
             try (var stream = CopperBeaconBlockEntityTest.class.getClassLoader()
                     .getResourceAsStream(path)) {
                 assertNotNull(stream, path);
                 var image = ImageIO.read(stream);
                 assertNotNull(image, path);
-                assertEquals(6, image.getWidth(), path);
-                assertEquals(6, image.getHeight(), path);
+                // SpriteLoader limits the entire atlas by the smallest power of
+                // two dividing any sprite dimension, even when the option is 4.
+                assertTrue(Integer.lowestOneBit(image.getWidth()) >= 16, path);
+                assertTrue(Integer.lowestOneBit(image.getHeight()) >= 16, path);
+                assertEquals(0, image.getWidth() % 6, path);
+                assertEquals(0, image.getHeight() % 6, path);
+                int scaleX = image.getWidth() / 6;
+                int scaleY = image.getHeight() / 6;
+                for (int y = 0; y < image.getHeight(); y++) {
+                    for (int x = 0; x < image.getWidth(); x++) {
+                        assertEquals(image.getRGB(x / scaleX * scaleX, y / scaleY * scaleY),
+                                image.getRGB(x, y), path + ": original pixel cells stay uniform");
+                    }
+                }
             }
         }
     }

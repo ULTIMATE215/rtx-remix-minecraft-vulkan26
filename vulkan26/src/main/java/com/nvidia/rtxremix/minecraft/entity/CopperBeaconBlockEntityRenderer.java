@@ -130,6 +130,9 @@ public final class CopperBeaconBlockEntityRenderer
                 CubeListBuilder.create()
                         .texOffs(0, 0).addBox(-3.0f, -3.0f, -4.01f, 6.0f, 6.0f, 0.0f),
                 PartPose.offset(8.0f, 10.0f, 8.0f));
+        // Keep the original normalized UVs. The 6x6 pixel art is enlarged 8x
+        // in the PNGs so their dimensions support four atlas mip levels;
+        // a 6x6 sprite would lower the entire block atlas to mip level 1.
         return LayerDefinition.create(modelData, 6, 6);
     }
 
