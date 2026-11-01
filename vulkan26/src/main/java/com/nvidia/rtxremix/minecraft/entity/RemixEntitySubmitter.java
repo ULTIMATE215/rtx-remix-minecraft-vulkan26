@@ -258,7 +258,7 @@ public class RemixEntitySubmitter {
      *
      * <p>The other components are the things proven to vary for one cuboid within a
      * single frame. {@code texId} separates iron from diamond armour on the shared
-     * armour model. {@code surfaceMode} varies per entity via playerSkinSurfaceMode.
+     * armour model. {@code surfaceMode} varies with the skin pixels each part samples.
      * {@code shellLayer} scales the shell offset baked into the vertices, so dropping
      * it collapses a dyed-leather overlay onto the body.
      *
@@ -616,6 +616,7 @@ public class RemixEntitySubmitter {
         RemixTexture emissive;
         RemixTexture sssThickness;
         RemixTexture sssAlbedo;
+        PlayerSkinAlpha skinAlpha;
         boolean hasPBR;
         final List<RemixTexture> ownedTextures = new ArrayList<>();
 
@@ -852,9 +853,9 @@ public class RemixEntitySubmitter {
         if (texId == null) return;
         RenderType renderLayer = layer.renderLayer();
         RenderLayerUtils.SurfaceMode layerMode = RenderLayerUtils.surfaceMode(renderLayer);
-        RenderLayerUtils.SurfaceMode surfaceMode = playerSkinSurfaceMode(layerMode,
-                result.owner() instanceof Player
-                        && renderLayer == RenderTypes.entityTranslucent(texId));
+        boolean playerSkinLayer = layerMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
+                && result.owner() instanceof Player
+                && renderLayer == RenderTypes.entityTranslucent(texId);
 
         RemixCapturingConsumer consumer = layer.consumer();
         // Guard on parts, not vertices: a cuboid part carries no captured
@@ -866,6 +867,12 @@ public class RemixEntitySubmitter {
         if (dynamicTextureCheckFrames.put(texId, frame) != frame) {
             refreshDynamicTexture(texId);
         }
+
+        // Body and outer skin share one vanilla layer and texture. Resolve alpha per
+        // cuboid, after its texture is ready, so the outer layer can blend without
+        // moving the opaque body into Remix's unordered transparency path.
+        EntityTextureSet skinTextures = playerSkinLayer ? ensureTextureSet(texId) : null;
+        PlayerSkinAlpha skinAlpha = skinTextures == null ? null : skinTextures.skinAlpha;
 
         // Parts are recorded during capture: a quad layer closes a part as its
         // quads close, folding the geometry hash while each quad is still hot, and
@@ -898,10 +905,12 @@ public class RemixEntitySubmitter {
             }
             if (canvasPatternCount > 0) {
                 submitCanvasPatterns(result, consumer, canvasFirstPart, canvasPatternCount,
-                        texId, surfaceMode, layerIndex, worldTransform, patternCategoryFlags);
+                        texId, layerMode, layerIndex, worldTransform, patternCategoryFlags);
                 canvasPatternCount = 0;
             }
             if (canvasReader.isBacking(role, sides, bone)) continue;
+            RenderLayerUtils.SurfaceMode surfaceMode = skinAlpha == null ? layerMode
+                    : skinAlpha.surfaceMode(sides, consumer.getPartSprite(part), consumer.getPartTint(part));
             submitRigidPart(result, consumer, part, texId,
                     atlasSurfaceMode(texId, surfaceMode, consumer.getPartBlockItemLayer(part)),
                     layer.topology(), layer.transientGeometry(), layerIndex,
@@ -911,7 +920,7 @@ public class RemixEntitySubmitter {
         }
         if (canvasPatternCount > 0) {
             submitCanvasPatterns(result, consumer, canvasFirstPart, canvasPatternCount,
-                    texId, surfaceMode, layerIndex, worldTransform, patternCategoryFlags);
+                    texId, layerMode, layerIndex, worldTransform, patternCategoryFlags);
         }
     }
 
@@ -960,20 +969,6 @@ public class RemixEntitySubmitter {
             case GLASS -> BlockTextureManager.L_GLASS;
             default -> BlockTextureManager.L_CUTOUT;
         };
-    }
-
-    /**
-     * Vanilla submits the complete player model through an entity-translucent
-     * layer so its outer skin may use alpha. Treating that entire layer as a
-     * blended Remix surface sends even the opaque body through the unordered
-     * translucency path and makes it appear ghosted. Preserve texture alpha as
-     * a cutout instead.
-     */
-    static RenderLayerUtils.SurfaceMode playerSkinSurfaceMode(
-            RenderLayerUtils.SurfaceMode capturedMode, boolean vanillaPlayerSkinLayer) {
-        return vanillaPlayerSkinLayer && capturedMode == RenderLayerUtils.SurfaceMode.TRANSLUCENT
-                ? RenderLayerUtils.SurfaceMode.CUTOUT
-                : capturedMode;
     }
 
     /**
@@ -2128,21 +2123,30 @@ public class RemixEntitySubmitter {
         if (failedTextures.contains(textureId)) return;
 
         try {
-            EntityTextureSet textures = textureSets.get(textureId);
-            if (textures == null) {
-                textures = RenderLayerUtils.UNTEXTURED_LAYER_ID.equals(textureId)
-                        ? createUntexturedTextureSet()
-                        : isAtlasTexture(textureId)
-                        ? tryCreateAtlasTextureSet(textureId)
-                        : tryCreateTextureSet(textureId);
-                if (textures == null) return;
-                textureSets.put(textureId, textures);
-            }
-
+            EntityTextureSet textures = ensureTextureSet(textureId);
+            if (textures == null) return;
             RemixMaterial material = createMaterial(materialKey, textures);
             cacheMaterial(materialKey, material);
         } catch (Exception e) {
             LOGGER.error("Failed to create material for {}: {}", textureId, e.getMessage(), e);
+        }
+    }
+
+    private EntityTextureSet ensureTextureSet(Identifier textureId) {
+        if (failedTextures.contains(textureId)) return null;
+        EntityTextureSet textures = textureSets.get(textureId);
+        if (textures != null) return textures;
+        try {
+            textures = RenderLayerUtils.UNTEXTURED_LAYER_ID.equals(textureId)
+                    ? createUntexturedTextureSet()
+                    : isAtlasTexture(textureId)
+                    ? tryCreateAtlasTextureSet(textureId)
+                    : tryCreateTextureSet(textureId);
+            if (textures != null) textureSets.put(textureId, textures);
+            return textures;
+        } catch (Exception e) {
+            LOGGER.error("Failed to create entity textures for {}: {}", textureId, e.getMessage(), e);
+            return null;
         }
     }
 
@@ -2462,6 +2466,7 @@ public class RemixEntitySubmitter {
 
         try {
             updateTextureFromMemory(textures.albedo, pixels.data(), pixels.width(), pixels.height());
+            textures.skinAlpha = PlayerSkinAlpha.fromRgba(pixels.data(), pixels.width(), pixels.height());
 
             dynamicTextureVersions.put(textureId, pixels.version());
             dynamicTextureSizes.put(textureId, new TextureSize(pixels.width(), pixels.height()));
@@ -2559,6 +2564,7 @@ public class RemixEntitySubmitter {
         textures.albedo = uploadAndOwn(textures, "entity_a_" + textureName, albedoRGBA, w, h,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         if (textures.albedo == null) return;
+        textures.skinAlpha = PlayerSkinAlpha.fromRgba(albedoRGBA, w, h);
 
         if (nImg != null) {
             byte[] normalData = new byte[w * h * 4];
