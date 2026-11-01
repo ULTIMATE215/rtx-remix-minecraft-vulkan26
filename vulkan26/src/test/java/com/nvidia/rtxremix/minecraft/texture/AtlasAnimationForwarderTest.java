@@ -148,6 +148,7 @@ class AtlasAnimationForwarderTest {
         }
 
         @Override public NativeImage getImage() { return image; }
+        @Override public NativeImage[] getMipImages() { return new NativeImage[]{image}; }
         @Override public AnimatedTexture getAnimation() { return null; }
     }
 

@@ -128,6 +128,14 @@ fixture, live on the [`feature/volumetric-clouds` branch](https://github.com/ULT
 The main build contains mesh clouds. Older settings files can retain volume-only
 keys; the settings loader skips unknown keys and loads the remaining preferences.
 
+Static cutout terrain, including vanilla leaves, uses Minecraft's generated mipmaps
+with its alpha coverage and texture metadata preserved. Its padded albedo atlas uses
+linear filtering; LabPBR AO and subsurface materials remain active. The atlas is loaded
+through the runtime's DDS API and cached under `.rtx-remix-cache/cutout-atlas/` in the
+game directory. Files stay available for native streaming and can be removed with the
+game closed. Animated resource-pack sprites keep the dynamic atlas and its animation
+updates. Use Minecraft's mipmap setting above zero to provide cutout mipmaps.
+
 ## Diagnosing HUD trails
 
 The hotbar is drawn after world submission and Minecraft's post effects. Windows

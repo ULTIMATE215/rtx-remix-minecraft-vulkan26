@@ -322,6 +322,11 @@ public final class DirectQuadWriter {
             BlockTextureManager.SpriteEntry se = stageSpriteEntry[i];
             int cat = stageCategory[i];
 
+            if (cat == ChunkManager.CAT_CUTOUT && se != null) {
+                // Animation patches regenerate mips, so animated sprites use the dynamic atlas.
+                layer = se.hasCutoutMipmaps ? "cutout_mipped" : "cutout";
+                layerType = BlockTextureManager.layerType(layer);
+            }
             String bk = layer;
             if (cat == ChunkManager.CAT_SOLID && layerType != solidType) {
                 bk = "solid";

@@ -36,6 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -81,6 +82,7 @@ public class BlockTextureManager {
     private final RemixRenderer renderer;
     private byte[] albedoRGBA;
     private RemixTexture atlasAlbedo;
+    private RemixTexture atlasCutoutAlbedo;
     private RemixTexture atlasEmissive;
     private RemixTexture atlasNormalTex;
     private RemixTexture atlasHeightTex;
@@ -155,10 +157,11 @@ public class BlockTextureManager {
         public final Identifier id;
         public final float u0, v0, u1, v1;
         public final boolean hasTransparency;
+        public final boolean animated;
         final int pixW, pixH, pixX, pixY, padding;
         private final BitSet transparentPixels;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
-        public boolean hasPBR, hasSSS;
+        public boolean hasPBR, hasSSS, hasCutoutMipmaps;
         float[] lightColor;
 
         SpriteEntry(int i, Identifier id, TextureAtlasSprite s) {
@@ -167,6 +170,7 @@ public class BlockTextureManager {
             pixX = SpriteLayout.contentX(s); pixY = SpriteLayout.contentY(s);
             padding = s.padding;
             SpriteContents contents = s.contents();
+            animated = contents.isAnimated();
             pixW = contents.width(); pixH = contents.height();
             transparentPixels = scanTransparency(contents, pixW, pixH);
             hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
@@ -256,7 +260,7 @@ public class BlockTextureManager {
             if (!terrainEmissionMaterialsInitialized) {
                 appliedTerrainEmissionMultiplier = terrainEmissionMultiplier;
             }
-            buildAtlasMaterials(api, labPBRVariants);
+            buildAtlasMaterials(api, labPBRVariants, spriteAtlas);
             buildWaterMaterials(api);
             Map<String, AnimatedSpriteLabPBR> labPBRMap =
                 buildAnimatedSpriteLabPBRMap(labPBRVariants, spriteAtlas);
@@ -389,8 +393,11 @@ public class BlockTextureManager {
     //  Atlas-level PBR textures & materials
     // ====================================================================
 
-    private void buildAtlasMaterials(RemixAPI api, LabPBRConverter.VariantCache labPBRVariants) {
+    private void buildAtlasMaterials(RemixAPI api, LabPBRConverter.VariantCache labPBRVariants,
+                                     TextureAtlas atlas) {
         int pixels = atlasW * atlasH;
+        List<CutoutAtlasMipmaps.Sprite> cutoutSprites = new ArrayList<>();
+        Map<Identifier, TextureAtlasSprite> atlasSprites = ((SpriteAtlasAccessor) atlas).getSprites();
 
         byte[] normalAtlas    = new byte[pixels * 4];
         byte[] heightAtlas    = new byte[pixels];
@@ -419,6 +426,15 @@ public class BlockTextureManager {
             NativeImage sI = labPBRVariants.loadVariant(se.id, "_s");
             NativeImage sssI = labPBRVariants.loadVariant(se.id, "_sss");
             try {
+                if (se.hasTransparency && !se.animated) {
+                    NativeImage[] mips = ((SpriteContentsAccessor) atlasSprites.get(se.id).contents()).getMipImages();
+                    CutoutAtlasMipmaps.Sprite sprite = CutoutAtlasMipmaps.Sprite.capture(
+                            se.pixX, se.pixY, se.pixW, se.pixH, se.padding, mips, nI);
+                    if (sprite.levelCount() > 1) {
+                        cutoutSprites.add(sprite);
+                        se.hasCutoutMipmaps = true;
+                    }
+                }
                 if (nI != null) {
                     LabPBRConverter.blitNormal(normalAtlas, atlasW, nI, se.pixX, se.pixY, se.pixW, se.pixH);
                     LabPBRConverter.blitHeight(heightAtlas, atlasW, nI, se.pixX, se.pixY, se.pixW, se.pixH);
@@ -474,6 +490,7 @@ public class BlockTextureManager {
 
         atlasAlbedo = upload(api, "atlas_albedo", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
+        buildCutoutAtlas(cutoutSprites);
 
         RemixTexture normalTex    = hasAnyNormal ? upload(api, "atlas_normal", normalAtlas, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.NORMAL_DX) : null;
@@ -529,6 +546,25 @@ public class BlockTextureManager {
                 hasAnyNormal, hasAnyHeight, hasAnyEmissive, hasAnySSS, sssCount, sssSprites);
     }
 
+    private void buildCutoutAtlas(List<CutoutAtlasMipmaps.Sprite> sprites) {
+        if (sprites.isEmpty()) return;
+        try {
+            byte[][] mips = CutoutAtlasMipmaps.build(atlasW, atlasH, sprites);
+            var directory = Minecraft.getInstance().gameDirectory.toPath()
+                    .resolve(".rtx-remix-cache").resolve("cutout-atlas");
+            var file = DdsTextureCache.write(directory, atlasW, atlasH, mips);
+            RemixTexture texture = new RemixTexture(file);
+            RemixTextureStore.get().create(texture);
+            managedTextures.add(texture);
+            atlasCutoutAlbedo = texture;
+            LOGGER.info("Cutout atlas: preserved {} Minecraft mip levels for {} static sprites",
+                    mips.length, sprites.size());
+        } catch (IOException | RuntimeException e) {
+            for (SpriteEntry sprite : this.sprites) sprite.hasCutoutMipmaps = false;
+            LOGGER.warn("Could not upload Minecraft cutout mipmaps; using the dynamic atlas", e);
+        }
+    }
+
     private RemixMaterial createAtlasOpaqueMaterial(int lt, RemixTexture normalTex,
                                                RemixTexture heightTex, RemixTexture roughnessTex,
                                                RemixTexture metallicTex, RemixTexture emissiveTex,
@@ -545,6 +581,8 @@ public class BlockTextureManager {
                                                RemixTexture sssTex,
                                                RemixTexture sssAlbedoTex,
                                                float emissionIntensity) {
+        boolean preservedCutout = lt == L_CUTOUT_MIPPED && atlasCutoutAlbedo != null;
+        RemixTexture albedo = preservedCutout ? atlasCutoutAlbedo : atlasAlbedo;
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f).roughnessConstant(1f).metallicConstant(1f)
                 .useDrawCallAlphaState(true);
@@ -553,10 +591,10 @@ public class BlockTextureManager {
         if (metallicTex != null)  ob.metallicTexture(metallicTex.getHandle());
         if (heightTex != null)    ob.heightTexture(heightTex.getHandle()).displaceIn(POM_DISPLACE_IN);
         if (sssTex != null)       ob.subsurfaceExt(buildAtlasSSS(
-                lt == L_SOLID, sssTex, sssAlbedoTex));
+                lt == L_SOLID, albedo, sssTex, sssAlbedoTex));
 
         MaterialInfo.Builder mb = MaterialInfo.builder()
-                .albedoTexture(atlasAlbedo.getHandle()).filterMode(0);
+                .albedoTexture(albedo.getHandle()).filterMode(preservedCutout ? 1 : 0);
         if (normalTex != null)   mb.normalTexture(normalTex.getHandle());
         if (emissiveTex != null) {
             mb.emissiveTexture(emissiveTex.getHandle())
@@ -604,10 +642,11 @@ public class BlockTextureManager {
         return baseEmissionIntensity * Math.max(0.0f, emissionMultiplier);
     }
 
-    private MaterialInfoOpaqueSubsurfaceEXT buildAtlasSSS(boolean solid, RemixTexture sssTex,
+    private MaterialInfoOpaqueSubsurfaceEXT buildAtlasSSS(boolean solid, RemixTexture albedo,
+                                                          RemixTexture sssTex,
                                                           RemixTexture sssAlbedoTex) {
         MaterialInfoOpaqueSubsurfaceEXT.Builder sb = MaterialInfoOpaqueSubsurfaceEXT.builder()
-                .transmittanceTexture(atlasAlbedo.getHandle());
+                .transmittanceTexture(albedo.getHandle());
         if (solid) {
             RemixTexture radiusTexture = (sssAlbedoTex != null) ? sssAlbedoTex : atlasAlbedo;
             sb.diffusionProfile(true).radiusTexture(radiusTexture.getHandle())
@@ -1296,6 +1335,7 @@ public class BlockTextureManager {
         materials.clear(); sprites.clear(); spriteById.clear(); spriteLightColors.clear();
         Arrays.fill(atlasMaterials, null);
         Arrays.fill(atlasMaterialsSSS, null);
+        atlasCutoutAlbedo = null;
         atlasNormalTex = null;
         atlasHeightTex = null;
         atlasRoughnessTex = null;

@@ -15,6 +15,9 @@ public interface SpriteContentsAccessor {
     @Accessor("originalImage")
     NativeImage getImage();
 
+    @Accessor("byMipLevel")
+    NativeImage[] getMipImages();
+
     @Accessor("animatedTexture")
     @Nullable SpriteContents.AnimatedTexture getAnimation();
 }

@@ -10,9 +10,10 @@ import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
+import java.nio.file.Path;
 
 /**
- * Wraps a single Remix texture resource backed by pixel data in memory.
+ * Wraps a single Remix texture resource backed by pixels or an immutable texture file.
  *
  * <p>Create via {@link RemixTextureStore#create(RemixAssetBase)}.
  * Destroy via the public {@link #destroy()} method.
@@ -24,6 +25,7 @@ public class RemixTexture extends RemixAssetBase {
     private int format;
     private int purpose;
     private ByteBuffer pixelData;
+    private Path textureFile;
 
     public RemixTexture(int width, int height, int format, int purpose, ByteBuffer pixelData) {
         this.width = width;
@@ -33,8 +35,15 @@ public class RemixTexture extends RemixAssetBase {
         this.pixelData = pixelData;
     }
 
+    /** The caller keeps the file available while the runtime may stream its mipmaps. */
+    public RemixTexture(Path textureFile) {
+        this.textureFile = textureFile.toAbsolutePath();
+    }
+
     @Override
     protected long doCreate(RemixAPI api, long hash) {
+        if (textureFile != null) return api.createTextureFromFile(textureFile.toString());
+
         TextureFromMemoryInfo info = new TextureFromMemoryInfo();
         info.hash = hash;
         info.width = width;
