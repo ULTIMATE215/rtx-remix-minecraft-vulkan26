@@ -55,12 +55,13 @@ final class VolumetricCloudRenderer implements AutoCloseable {
         long sceneHandle = ((VulkanGpuTextureView) scene).vkImageView();
         long depthHandle = ((VulkanGpuTextureView) depth).vkImageView();
         if (resources == null || resources.sceneView != sceneHandle || resources.depthView != depthHandle
-                || resources.width != scene.getWidth(0) || resources.height != scene.getHeight(0)) {
+                || resources.width != scene.getWidth(0) || resources.height != scene.getHeight(0)
+                || resources.depthWidth != depth.getWidth(0) || resources.depthHeight != depth.getHeight(0)) {
             close();
             if (shader == null) shader = loadShader();
             try {
                 resources = new CloudVolumeResources(device.vkDevice(), device.vma(), shader,
-                        scene.getWidth(0), scene.getHeight(0), sceneHandle, depthHandle);
+                        scene.getWidth(0), scene.getHeight(0), depth.getWidth(0), depth.getHeight(0), sceneHandle, depthHandle);
                 output = device.createTexture("Remix world with volume clouds",
                         GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_TEXTURE_BINDING,
                         scene.texture().getFormat(), scene.getWidth(0), scene.getHeight(0), 1, 1);

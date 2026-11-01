@@ -126,11 +126,18 @@ quality, thickness, coverage, density, wind speed, height, and size are adjustab
 Minecraft's own Clouds setting must also be enabled.
 
 Clouds are composited with the same frame's scene depth after Remix reconstruction
-and before weather and the HUD. Depth remains at the internal render resolution;
-a conservative foreground footprint protects reconstructed silhouettes from
-jittered depth misses. This can leave a narrow area without clouds next to an
-occluder. The headless GPU fixture covers full-, half-, and third-resolution depth
-with subpixel jitter; Windows rendering still needs visual validation.
+and before weather and the HUD. Depth remains at the internal render resolution.
+Depth bounds locate silhouettes, and nearby foreground and sky colors estimate
+their coverage in the reconstructed image. The compositor replaces the sky's
+contribution in partially covered pixels while preserving foreground attenuation
+inside the cloud layer. The cloud field extends behind the boundary so interpolation
+does not leave the original sky as a flickering fringe.
+
+When colors cannot distinguish foreground from sky, the compositor conservatively
+protects foreground depth; a fringe can remain around ambiguous or very thin details.
+The headless GPU fixture checks foreground protection, partial coverage, adjacent
+sky, and frame stability with full-, half-, and third-resolution jittered depth,
+including textured white surfaces. Windows rendering still needs visual validation.
 Clouds use no temporal history and are independent
 of Remix's circular geometry fade. The current volume covers the primary view;
 it does **not** contribute to native reflections or shadows on terrain. Disable

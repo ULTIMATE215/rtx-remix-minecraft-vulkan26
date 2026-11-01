@@ -18,26 +18,30 @@ import static org.lwjgl.vulkan.VK10.*;
 final class CloudVolumeResources implements Destroyable {
     static final int PARAMETER_BYTES = 128;
     static final int NOISE_SIZE = 64;
-    final int width, height;
+    final int width, height, depthWidth, depthHeight;
     final long sceneView, depthView;
     private final VkDevice device;
     private final long allocator;
-    private final Image[] images = new Image[3];
+    private final Image[] images = new Image[4];
     private long descriptorLayout, pipelineLayout, pipeline, descriptorPool, descriptorSet, sampler;
     private boolean initialized;
 
     CloudVolumeResources(VkDevice device, long allocator, String source, int width, int height,
+                         int depthWidth, int depthHeight,
                          long sceneView, long depthView) {
         this.device = device;
         this.allocator = allocator;
         this.width = width;
         this.height = height;
+        this.depthWidth = depthWidth;
+        this.depthHeight = depthHeight;
         this.sceneView = sceneView;
         this.depthView = depthView;
         try {
             images[0] = new Image(NOISE_SIZE, NOISE_SIZE, NOISE_SIZE, VK_FORMAT_R8G8B8A8_UNORM);
             images[1] = new Image((width + 1) / 2, (height + 1) / 2, 1, VK_FORMAT_R16G16B16A16_SFLOAT);
             images[2] = new Image(width, height, 1, VK_FORMAT_R16G16B16A16_SFLOAT);
+            images[3] = new Image(depthWidth, depthHeight, 1, VK_FORMAT_R32G32B32A32_SFLOAT);
             createPipeline(source);
             createDescriptors();
         } catch (RuntimeException | Error failure) {
@@ -68,8 +72,8 @@ final class CloudVolumeResources implements Destroyable {
             ByteBuffer binary = shaderc_result_get_bytes(result);
             if (binary == null) throw new IllegalStateException("Empty volumetric cloud shader");
             var handle = stack.mallocLong(1);
-            var bindings = VkDescriptorSetLayoutBinding.calloc(6, stack);
-            for (int i = 0; i < 6; i++) bindings.get(i).binding(i).descriptorCount(1)
+            var bindings = VkDescriptorSetLayoutBinding.calloc(7, stack);
+            for (int i = 0; i < 7; i++) bindings.get(i).binding(i).descriptorCount(1)
                     .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT).descriptorType(descriptorType(i));
             check(vkCreateDescriptorSetLayout(device, VkDescriptorSetLayoutCreateInfo.calloc(stack).sType$Default()
                     .pBindings(bindings), null, handle), "create cloud descriptor layout");
@@ -102,7 +106,7 @@ final class CloudVolumeResources implements Destroyable {
                     .addressModeW(VK_SAMPLER_ADDRESS_MODE_REPEAT), null, handle), "create cloud sampler");
             sampler = handle.get(0);
             var sizes = VkDescriptorPoolSize.calloc(2, stack);
-            sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(3);
+            sizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(4);
             sizes.get(1).type(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(3);
             check(vkCreateDescriptorPool(device, VkDescriptorPoolCreateInfo.calloc(stack).sType$Default()
                     .maxSets(1).pPoolSizes(sizes), null, handle), "create cloud descriptor pool");
@@ -110,10 +114,11 @@ final class CloudVolumeResources implements Destroyable {
             check(vkAllocateDescriptorSets(device, VkDescriptorSetAllocateInfo.calloc(stack).sType$Default()
                     .descriptorPool(descriptorPool).pSetLayouts(stack.longs(descriptorLayout)), handle), "allocate cloud descriptors");
             descriptorSet = handle.get(0);
-            var writes = VkWriteDescriptorSet.calloc(6, stack);
-            for (int i = 0; i < 6; i++) {
+            var writes = VkWriteDescriptorSet.calloc(7, stack);
+            for (int i = 0; i < 7; i++) {
                 long view = switch (i) { case 2 -> sceneView; case 3 -> depthView;
-                    case 4 -> images[1].view; case 5 -> images[2].view; default -> images[0].view; };
+                    case 4 -> images[1].view; case 5 -> images[2].view; case 6 -> images[3].view;
+                    default -> images[0].view; };
                 var image = VkDescriptorImageInfo.calloc(1, stack).imageLayout(VK_IMAGE_LAYOUT_GENERAL)
                         .imageView(view).sampler(descriptorType(i) == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ? sampler : 0);
                 writes.get(i).sType$Default().dstSet(descriptorSet).dstBinding(i).descriptorCount(1)
@@ -146,6 +151,8 @@ final class CloudVolumeResources implements Destroyable {
                 barrier(commands, stack);
                 initialized = true;
             }
+            dispatch(commands, parameters, 3, depthWidth, depthHeight, 1);
+            barrier(commands, stack);
             dispatch(commands, parameters, 1, (width + 1) / 2, (height + 1) / 2, 1);
             barrier(commands, stack);
             dispatch(commands, parameters, 2, width, height, 1);

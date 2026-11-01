@@ -89,7 +89,8 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
             depth = new TestImage(VK_FORMAT_R32_SFLOAT, depthWidth, depthHeight);
             upload = new HostBuffer(WIDTH * HEIGHT * 16 + depthWidth * depthHeight * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
             readback = new HostBuffer(WIDTH * HEIGHT * 8, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-            resources = new CloudVolumeResources(device, allocator, VolumetricCloudRenderer.loadShader(), WIDTH, HEIGHT, color.view, depth.view);
+            resources = new CloudVolumeResources(device, allocator, VolumetricCloudRenderer.loadShader(),
+                    WIDTH, HEIGHT, depthWidth, depthHeight, color.view, depth.view);
         }
     }
 
@@ -115,26 +116,39 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
     }
 
     /** A stable antialiased roof with subpixel jitter only in its render-resolution depth. */
-    private float[] renderSilhouette(ByteBuffer parameters, float jitterX, float jitterY) {
+    private float[] renderSilhouette(ByteBuffer parameters, float jitterX, float jitterY, int material) {
         for (int y = 0; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
-            float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f);
+            float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f, material);
             int offset = (y * WIDTH + x) * 16;
-            upload.mapped.putFloat(offset, 0.24f + coverage * (0.20f - 0.24f));
-            upload.mapped.putFloat(offset + 4, 0.48f + coverage * (0.28f - 0.48f));
-            upload.mapped.putFloat(offset + 8, 0.76f + coverage * (0.12f - 0.76f));
+            upload.mapped.putFloat(offset, coveredColor(foregroundColor(material, x, y, 0), 0.24f, coverage));
+            upload.mapped.putFloat(offset + 4, coveredColor(foregroundColor(material, x, y, 1), 0.48f, coverage));
+            upload.mapped.putFloat(offset + 8, coveredColor(foregroundColor(material, x, y, 2), 0.76f, coverage));
             upload.mapped.putFloat(offset + 12, 1);
         }
         for (int y = 0; y < depthHeight; y++) for (int x = 0; x < depthWidth; x++) {
             float fullX = (x + 0.5f + jitterX) * WIDTH / depthWidth;
             float fullY = (y + 0.5f + jitterY) * HEIGHT / depthHeight;
-            putDepth(x, y, silhouetteCoverage(fullX, fullY) >= 0.5f);
+            putDepth(x, y, silhouetteCoverage(fullX, fullY, material) >= 0.5f);
         }
         return dispatch(parameters);
     }
 
-    private static float silhouetteCoverage(float x, float y) {
+    private static float silhouetteCoverage(float x, float y, int material) {
         float edge = WIDTH * 0.40f + (y - HEIGHT * 0.5f) * 0.37f;
+        if (material == 1 || material == 2) return Math.clamp(x - edge + 0.5f, 0f, 1f);
         return Math.clamp(edge - x + 0.5f, 0f, 1f);
+    }
+
+    private static float foregroundColor(int material, int x, int y, int channel) {
+        if (material == 0) return channel == 0 ? 0.20f : channel == 1 ? 0.28f : 0.12f;
+        if (material == 3) return channel == 0 ? 0.24f : channel == 1 ? 0.48f : 0.76f;
+        float value = material == 2 && ((x / 7 + y / 5) & 1) != 0 ? 0.40f : 0.88f;
+        return value * (channel == 0 ? 1f : channel == 1 ? 0.99f : 0.96f);
+    }
+
+    private static float coveredColor(float foreground, float background, float coverage) {
+        return (float) Math.pow(Math.pow(foreground, 2.2) * coverage
+                + Math.pow(background, 2.2) * (1 - coverage), 1 / 2.2);
     }
 
     private float[] dispatch(ByteBuffer parameters) {
@@ -240,36 +254,88 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
                 if (Math.abs(blocked[i] - 0.2f) > 0.001f || Math.abs(blocked[i+1] - 0.28f) > 0.001f
                         || Math.abs(blocked[i+2] - 0.12f) > 0.001f) throw new AssertionError("Clouds painted over foreground at " + x + "," + y);
             }
+            ByteBuffer fogParameters = parameters(100, 216, 0, 1);
+            fogParameters.putFloat(108, 1); // Dense rain cloud at this camera, rather than a gap between cloud bodies.
+            float[] foggedForeground = fixture.render(fogParameters, true);
+            int foggedPixels = 0;
+            for (int y = HEIGHT / 4 + 4; y < HEIGHT; y++) for (int x = WIDTH / 3 + 4; x < WIDTH / 2 - 4; x++) {
+                int i = (y * WIDTH + x) * 4;
+                if (Math.abs(foggedForeground[i] - 0.2f) + Math.abs(foggedForeground[i + 1] - 0.28f)
+                        + Math.abs(foggedForeground[i + 2] - 0.12f) > 0.03f) foggedPixels++;
+            }
+            if (foggedPixels == 0) throw new AssertionError("Cloud coverage discarded attenuation in front of an in-cloud object");
             save(output,"below-and-horizon",below);
             save(output,"inside",inside);
             save(output,"above",above);
             save(output,"camera-moved",moved);
             save(output,"depth-occlusion",blocked);
+            save(output,"in-cloud-foreground",foggedForeground);
             System.out.println("PASS: coverage, static repeat, horizon (" + horizon + " pixels), inside, above, camera translation and foreground occlusion");
+            System.out.println("PASS: in-cloud foreground retains volume attenuation");
         }
         for (int divisor : new int[]{1, 2, 3}) try (var fixture = new CloudVolumeGpuFixture(WIDTH / divisor, HEIGHT / divisor)) {
-            for (float jitterY : new float[]{-0.49f, 0.49f}) for (float jitterX : new float[]{-0.49f, 0.49f}) {
-                float[] result = fixture.renderSilhouette(parameters(100, 64, 0, 0.75f), jitterX, jitterY);
-                save(output, "silhouette-" + divisor + "-" + jitterX + "-" + jitterY, result);
-                int cloudPixels = 0;
-                for (int y = HEIGHT / 2; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
-                    int offset = (y * WIDTH + x) * 4;
-                    float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f);
-                    float red = 0.24f + coverage * (0.20f - 0.24f);
-                    float green = 0.48f + coverage * (0.28f - 0.48f);
-                    float blue = 0.76f + coverage * (0.12f - 0.76f);
-                    float error = Math.abs(result[offset] - red) + Math.abs(result[offset + 1] - green)
-                            + Math.abs(result[offset + 2] - blue);
-                    if (coverage > 0 && error > 0.003f) {
-                        throw new AssertionError("Clouds changed reconstructed silhouette at " + x + "," + y
-                                + " with depth scale 1/" + divisor + " and jitter " + jitterX + "," + jitterY + ": " + error);
-                    }
-                    if (coverage == 0 && error > 0.03f) cloudPixels++;
-                }
-                if (cloudPixels < WIDTH * HEIGHT / 20) throw new AssertionError("Silhouette protection removed the sky clouds");
+            float[] skyReference = fixture.render(parameters(100, 64, 0, 0.75f), false);
+            for (int material = 0; material < 4; material++) {
+                fixture.verifySilhouette(output, divisor, material, skyReference);
             }
-            System.out.println("PASS: reconstructed silhouettes survive depth jitter at scale 1/" + divisor
-                    + "; sky clouds remain visible");
+        }
+    }
+
+    private void verifySilhouette(Path output, int divisor, int material, float[] skyReference) throws Exception {
+        String materialName = switch (material) { case 0 -> "green"; case 1 -> "white";
+            case 2 -> "textured-white"; default -> "sky-colored"; };
+        float[] previous = null;
+        float maxSkyError = 0, maxFrameChange = 0;
+        for (float jitterY : new float[]{-0.49f, 0.49f}) for (float jitterX : new float[]{-0.49f, 0.49f}) {
+            float[] result = renderSilhouette(parameters(100, 64, 0, 0.75f), jitterX, jitterY, material);
+            save(output, "silhouette-" + divisor + "-" + materialName + "-" + jitterX + "-" + jitterY, result);
+            int cloudPixels = 0;
+            for (int y = HEIGHT / 2; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
+                int offset = (y * WIDTH + x) * 4;
+                float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f, material);
+                float red = coveredColor(foregroundColor(material, x, y, 0), skyReference[offset], coverage);
+                float green = coveredColor(foregroundColor(material, x, y, 1), skyReference[offset + 1], coverage);
+                float blue = coveredColor(foregroundColor(material, x, y, 2), skyReference[offset + 2], coverage);
+                float error = Math.abs(result[offset] - red) + Math.abs(result[offset + 1] - green)
+                        + Math.abs(result[offset + 2] - blue);
+                if (coverage == 1 && error > 0.003f) {
+                    throw new AssertionError("Clouds changed reconstructed silhouette at " + x + "," + y
+                            + " with depth scale 1/" + divisor + " and jitter " + jitterX + "," + jitterY + ": " + error);
+                }
+                if (material != 3 && coverage > 0 && coverage < 1 && error > 0.03f) {
+                    throw new AssertionError("Clouds did not preserve antialiased edge coverage at " + x + "," + y
+                            + " with " + materialName + " and depth scale 1/" + divisor + ": " + error);
+                }
+                if (coverage == 0 && Math.abs(result[offset] - 0.24f) + Math.abs(result[offset + 1] - 0.48f)
+                        + Math.abs(result[offset + 2] - 0.76f) > 0.03f) cloudPixels++;
+                if (coverage == 0) {
+                    float skyError = 0;
+                    for (int channel = 0; channel < 3; channel++) {
+                        skyError += Math.abs(result[offset + channel] - skyReference[offset + channel]);
+                    }
+                    maxSkyError = Math.max(maxSkyError, skyError);
+                }
+                if (previous != null) {
+                    float frameChange = 0;
+                    for (int channel = 0; channel < 3; channel++) {
+                        frameChange += Math.abs(result[offset + channel] - previous[offset + channel]);
+                    }
+                    maxFrameChange = Math.max(maxFrameChange, frameChange);
+                }
+            }
+            if (cloudPixels < WIDTH * HEIGHT / 20) throw new AssertionError("Silhouette protection removed the sky clouds");
+            previous = result;
+        }
+        if (material == 3) {
+            System.out.println("PASS: sky-colored foreground stays opaque at scale 1/" + divisor
+                    + "; boundary remains ambiguous (sky error " + maxSkyError + ", frame change " + maxFrameChange + ")");
+        } else {
+            if (maxSkyError > 0.03f || maxFrameChange > 0.01f) {
+                throw new AssertionError("Cloud silhouette left a sky-colored fringe or flickered with "
+                        + materialName + " at scale 1/" + divisor);
+            }
+            System.out.println("PASS: " + materialName + " silhouette at scale 1/" + divisor
+                    + "; sky error " + maxSkyError + ", jitter frame change " + maxFrameChange);
         }
     }
 
