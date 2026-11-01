@@ -26,11 +26,14 @@ Keep English and Simplified Chinese labels, choices, and tips in sync. DLSS mode
 and frame generation are startup preferences, never live device reconfiguration.
 Native overlay input capture remains active for menus shown by the runtime.
 
-Clouds use the Classic and procedural mesh paths in `CloudRenderer`, submitted as
-Remix scene geometry. Experimental volumetric clouds live on
-`feature/volumetric-clouds`; their compute compositor, settings and GPU fixture
-are outside the main build. Do not copy code or assets from the all-rights-reserved
-ITRP reference pack.
+Volumetric clouds use `CloudVolumeResources` and `cloud_volume.comp` on Minecraft's
+Vulkan encoder. Composite the same-frame volume/depth after Remix Submit and
+before weather and the HUD; never modify the shared Remix image in the cloud pass.
+Retire descriptors and images through the encoder's GPU lifetime. The volume
+covers primary rays, not native reflections or ground shadows; legacy mesh clouds
+remain selectable and are the failure fallback. The headless cloud GPU fixture
+exercises production resources but does not replace signed-in Windows validation.
+Do not copy code or assets from the all-rights-reserved ITRP reference pack.
 
 `/rtx diagnoseui` records paired images around the GUI draw, before native Present.
 Treat it as an opt-in diagnostic, not a fix or evidence that native temporal

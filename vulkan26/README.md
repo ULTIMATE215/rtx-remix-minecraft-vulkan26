@@ -118,15 +118,36 @@ whether to discard them. A failed apply or save stays retryable. DLSS model and
 frame-generation preferences take effect on the next Minecraft launch; their
 labels and descriptions indicate that a restart is required.
 
-**Quality → Clouds → Cloud style** selects Classic clouds from Minecraft's cloud
-texture or procedural mesh clouds. Both are submitted to Remix as scene geometry.
-Classic cloud edge smoothing, cloud size, and height remain adjustable, and
+**Quality → Clouds → Volumetric clouds** enables a three-dimensional cloud layer
+by default. Vulkan compute integrates density, light extinction, and cloud
+self-shadowing through a curved atmosphere, including the distant horizon and
+views from inside or above the layer. The layer follows world time and weather;
+quality, thickness, coverage, density, wind speed, height, and size are adjustable.
 Minecraft's own Clouds setting must also be enabled.
 
-Experimental volumetric clouds, including their compute shader, settings and GPU
-fixture, live on the [`feature/volumetric-clouds` branch](https://github.com/ULTIMATE215/rtx-remix-minecraft-vulkan26/tree/feature/volumetric-clouds).
-The main build contains mesh clouds. Older settings files can retain volume-only
-keys; the settings loader skips unknown keys and loads the remaining preferences.
+Clouds are composited with the same frame's scene depth after Remix reconstruction
+and before weather and the HUD. Depth remains at the internal render resolution.
+Depth bounds locate silhouettes, and nearby foreground and sky colors estimate
+their coverage in the reconstructed image. The compositor replaces the sky's
+contribution in partially covered pixels while preserving foreground attenuation
+inside the cloud layer. The cloud field extends behind the boundary so interpolation
+does not leave the original sky as a flickering fringe.
+
+When colors cannot distinguish foreground from sky, the compositor conservatively
+protects foreground depth; a fringe can remain around ambiguous or very thin details.
+The headless GPU fixture checks foreground protection, partial coverage, adjacent
+sky, and frame stability with full-, half-, and third-resolution jittered depth,
+including textured white surfaces. Windows rendering still needs visual validation.
+Clouds use no temporal history and are independent
+of Remix's circular geometry fade. The current volume covers the primary view;
+it does **not** contribute to native reflections or shadows on terrain. Disable
+Volumetric clouds to use the previous mesh clouds for those effects. Mesh clouds
+retain the runtime's distance fade. A failed volume initialization logs the cause
+and falls back to mesh clouds until resources are reloaded.
+
+The cloud shader and periodic noise are independently implemented. The ITRP
+reference informed the volume-rendering approach; none of its shader code or
+assets is included.
 
 ## Diagnosing HUD trails
 

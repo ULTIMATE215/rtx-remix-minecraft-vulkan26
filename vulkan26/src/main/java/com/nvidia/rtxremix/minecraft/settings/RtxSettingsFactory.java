@@ -15,6 +15,7 @@ import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.UnfocusedFramerateLimit;
 import com.nvidia.rtxremix.minecraft.entity.RemixEntityPass;
+import com.nvidia.rtxremix.minecraft.cloud.CloudVolumeSettings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -137,6 +138,22 @@ public final class RtxSettingsFactory {
                 SkyRenderer::getMinimumCelestialWeatherVisibility,
                 SkyRenderer::setMinimumCelestialWeatherVisibility));
 
+        CloudVolumeSettings clouds = renderer.getCloudRenderer().getVolumeSettings();
+        list.add(RtxSetting.ofBool("clouds.volumetric", SettingGroup.CLOUDS,
+                "rtxremix.setting.clouds.volumetric", "rtxremix.setting.clouds.volumetric.tip",
+                true, clouds::isEnabled, clouds::setEnabled));
+        list.add(RtxSetting.ofChoice("clouds.quality", SettingGroup.CLOUDS,
+                "rtxremix.setting.clouds.quality", "rtxremix.setting.clouds.quality.tip",
+                CloudVolumeSettings.QUALITIES, "rtxremix.settings.value.cloudQuality.", "balanced",
+                clouds::getQuality, clouds::setQuality));
+        list.add(floatSetting("clouds.thickness", SettingGroup.CLOUDS, "rtxremix.setting.clouds.thickness",
+                16, 256, clouds::getThickness, clouds::setThickness));
+        list.add(floatSetting("clouds.coverage", SettingGroup.CLOUDS, "rtxremix.setting.clouds.coverage",
+                0, 1, clouds::getCoverage, clouds::setCoverage));
+        list.add(floatSetting("clouds.density", SettingGroup.CLOUDS, "rtxremix.setting.clouds.density",
+                0.1, 3, clouds::getDensity, clouds::setDensity));
+        list.add(floatSetting("clouds.windSpeed", SettingGroup.CLOUDS, "rtxremix.setting.clouds.windSpeed",
+                0, 4, clouds::getWindSpeed, clouds::setWindSpeed));
         list.add(RtxSetting.ofBool("clouds.procedural", SettingGroup.CLOUDS,
                 "rtxremix.setting.clouds.procedural",
                 "rtxremix.setting.clouds.procedural.tip",

@@ -1343,7 +1343,9 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
                 submitFrame();
             }
             vulkanInterop.acquire(remixApi.dxvkGetInteropInfo());
-            return vulkanInterop.copyOutput();
+            GpuTextureView scene = vulkanInterop.copyOutput();
+            return RtxRemixMod.isRtxEnabled() && RtxRemixMod.isWorldActive() && cloudRenderer != null
+                    ? cloudRenderer.compositeVolume(scene, vulkanInterop.depthTexture()) : scene;
         }
     }
 
