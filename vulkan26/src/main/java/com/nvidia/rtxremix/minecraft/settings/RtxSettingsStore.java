@@ -50,6 +50,7 @@ public final class RtxSettingsStore {
                 case BOOL -> values.addProperty(s.id(), (Boolean) s.get());
                 case INT -> values.addProperty(s.id(), (Integer) s.get());
                 case FLOAT -> values.addProperty(s.id(), (Double) s.get());
+                case CHOICE -> values.addProperty(s.id(), (String) s.get());
             }
         }
         root.add("settings", values);
@@ -70,25 +71,8 @@ public final class RtxSettingsStore {
     }
 
     public void load(RtxSettings settings) {
-        if (!Files.exists(file)) {
-            return;
-        }
-        JsonObject values;
-        try (Reader r = new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8)) {
-            JsonObject root = JsonParser.parseReader(r).getAsJsonObject();
-            int version = root.has("version") ? root.get("version").getAsInt() : 0;
-            if (version != VERSION) {
-                LOGGER.warn("RTX settings file {} is version {}, expected {}; ignoring it and "
-                        + "using defaults, because a file from another version cannot be read "
-                        + "safely.", file, version, VERSION);
-                return;
-            }
-            if (!root.has("settings")) {
-                return;
-            }
-            values = root.getAsJsonObject("settings");
-        } catch (Exception e) {
-            LOGGER.warn("Failed to read RTX settings from {}, ignoring", file, e);
+        JsonObject values = readValues();
+        if (values == null) {
             return;
         }
         for (Map.Entry<String, JsonElement> entry : values.entrySet()) {
@@ -98,6 +82,37 @@ public final class RtxSettingsStore {
                 continue;
             }
             applyEntry(setting, entry.getValue());
+        }
+    }
+
+    /** Loads a startup preference before the live renderer and its other settings exist. */
+    public void loadSetting(RtxSetting<?> setting) {
+        JsonObject values = readValues();
+        if (values != null && values.has(setting.id())) {
+            applyEntry(setting, values.get(setting.id()));
+        }
+    }
+
+    private JsonObject readValues() {
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try (Reader r = new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8)) {
+            JsonObject root = JsonParser.parseReader(r).getAsJsonObject();
+            int version = root.has("version") ? root.get("version").getAsInt() : 0;
+            if (version != VERSION) {
+                LOGGER.warn("RTX settings file {} is version {}, expected {}; ignoring it and "
+                        + "using defaults, because a file from another version cannot be read "
+                        + "safely.", file, version, VERSION);
+                return null;
+            }
+            if (!root.has("settings")) {
+                return null;
+            }
+            return root.getAsJsonObject("settings");
+        } catch (Exception e) {
+            LOGGER.warn("Failed to read RTX settings from {}, ignoring", file, e);
+            return null;
         }
     }
 
@@ -130,6 +145,16 @@ public final class RtxSettingsStore {
                         return;
                     }
                     RtxSetting<Double> typed = (RtxSetting<Double>) setting;
+                    if (!typed.isDefaultValue(v)) {
+                        typed.apply(v);
+                    }
+                }
+                case CHOICE -> {
+                    if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                        throw new IllegalArgumentException("Choice must be a string id");
+                    }
+                    String v = value.getAsString();
+                    RtxSetting<String> typed = (RtxSetting<String>) setting;
                     if (!typed.isDefaultValue(v)) {
                         typed.apply(v);
                     }

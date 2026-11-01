@@ -29,6 +29,8 @@ import com.nvidia.rtxremix.minecraft.logic.ViewDistanceFade;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.settings.PostProcessingSettings;
+import com.nvidia.rtxremix.minecraft.settings.DlssSettings;
+import com.nvidia.rtxremix.minecraft.settings.RtxSettingsStore;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
@@ -109,6 +111,7 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
 
     // Remix API instance
     private RemixAPI remixApi;
+    private final DlssSettings dlssSettings = new DlssSettings();
     // Publishes initialized managers to the section workers reading the capture gate.
     private volatile boolean initialized = false;
     private long windowHandle;
@@ -260,6 +263,13 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
 
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
+
+            // Path selection must precede native device creation so Remix initializes
+            // the matching lighting/denoiser settings. Menu changes apply next launch.
+            new RtxSettingsStore(FabricLoader.getInstance().getConfigDir().resolve("rtxremix.json"))
+                    .loadSetting(dlssSettings.setting());
+            dlssSettings.applyBeforeStartup(remixApi::setConfigVariable);
+            LOGGER.info("DLSS startup selection: {}", dlssSettings.setting().get());
 
             // RTXREMIX_EXTRA_RTXCONF="rtx.a=1;rtx.b=true" applies arbitrary rtx.conf
             // overrides for this session. Applied before startup() so options that
@@ -1583,6 +1593,10 @@ public class RemixRenderer implements RemixVulkanSurface.FrameSink {
     
     public RemixAPI getRemixApi() {
         return remixApi;
+    }
+
+    public DlssSettings getDlssSettings() {
+        return dlssSettings;
     }
     
     public ChunkManager getChunkManager() {

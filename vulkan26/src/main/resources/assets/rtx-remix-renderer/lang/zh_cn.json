@@ -1,5 +1,22 @@
 {
   "rtxremix.renderer.unavailable": "RTX Remix 未启动",
   "rtxremix.renderer.requires_vulkan": "请在视频设置中选择 Vulkan，然后重启 Minecraft。当前使用原版渲染。",
-  "rtxremix.renderer.failed": "RTX Remix 启动失败，当前使用原版渲染。详情见 latest.log。"
+  "rtxremix.renderer.failed": "RTX Remix 启动失败，当前使用原版渲染。详情见 latest.log。",
+  "rtxremix.settings.title": "RTX Remix 设置",
+  "rtxremix.settings.button": "RTX Remix 设置…",
+  "rtxremix.settings.category.performance": "性能",
+  "rtxremix.settings.group.dlss": "DLSS（重启后生效）",
+  "rtxremix.setting.dlss.mode": "模式",
+  "rtxremix.setting.dlss.mode.tip": "重启 Minecraft 后生效。DLSS 4.5 超分使用第二代 Transformer：M 针对性能模式优化，L 针对超级性能模式优化。画质档位沿用 Remix 设置。超分模式下 Sparse Rendering 不工作；光线重建支持稀疏渲染。选择“沿用 Remix”则由原生菜单管理。切换模型可能改变 GPU 开销。",
+  "rtxremix.settings.value.dlss.remix": "沿用 Remix",
+  "rtxremix.settings.value.dlss.sr45": "4.5 超分 (M)",
+  "rtxremix.settings.value.dlss.sr45-l": "4.5 超分 (L)",
+  "rtxremix.settings.value.dlss.rr": "光线重建",
+  "rtxremix.dlss.selected": "已选择下次启动的 DLSS 模式：%s。请重启 Minecraft。DLSS 4.5 超分模式下 Sparse Rendering 不工作；光线重建支持稀疏渲染。",
+  "rtxremix.dlss.unknown": "未知 DLSS 模式，可选：%s",
+  "rtxremix.dlss.status": "Remix 当前解析的配置：%s，预设 %s。下次启动：%s。使用 /rtx dlss <remix|sr45|sr45-l|rr> 选择模式。",
+  "rtxremix.dlss.statusUnavailable": "无法读取 Remix 的 DLSS 配置，详情见 latest.log。",
+  "rtxremix.dlss.path.sr": "DLSS 超分辨率",
+  "rtxremix.dlss.path.rr": "DLSS 光线重建",
+  "rtxremix.dlss.path.other": "DLSS 未启用"
 }

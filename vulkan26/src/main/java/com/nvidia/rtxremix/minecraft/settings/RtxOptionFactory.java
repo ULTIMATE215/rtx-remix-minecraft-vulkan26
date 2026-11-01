@@ -99,6 +99,16 @@ final class RtxOptionFactory {
                         s.get(),
                         s::apply);
             }
+            case CHOICE -> {
+                RtxSetting<String> s = (RtxSetting<String>) setting;
+                return new OptionInstance<>(
+                        s.labelKey(),
+                        v -> tooltip(s, v),
+                        buttonValueText(value -> Component.translatable(s.choiceLabelKey(value))),
+                        new OptionInstance.Enum<>(s.choices(), Codec.STRING),
+                        s.get(),
+                        s::apply);
+            }
             default -> throw new IllegalStateException("Unknown kind: " + setting.kind());
         }
     }
@@ -157,6 +167,8 @@ final class RtxOptionFactory {
             case INT -> intValueText(setting.id(), (Integer) setting.defaultValue());
             case FLOAT -> floatValueText(
                     setting.id(), (Double) setting.defaultValue());
+            case CHOICE -> Component.translatable(
+                    setting.choiceLabelKey((String) setting.defaultValue()));
         };
         Component defaultLine = Component.translatable("rtxremix.settings.tooltip.default", defaultValue);
         if (!setting.isDefaultValue(value)) {

@@ -111,3 +111,41 @@ When opening a world with the parent's `data/rtx_remix_zones.dat`, the mod
 imports it before reading saved zones. It keeps the original file and uses an
 existing 26.2 file in preference to the legacy copy. World conf profiles stay
 under the save's `rtx-remix/confs/` directory.
+
+## DLSS 4.5
+
+The pinned runtime already bundles DLSS Super Resolution 310.9.1.0, including
+the DLSS 4.5 second-generation Transformer presets M and L. No replacement DLL
+is needed. See NVIDIA's [L/M introduction](https://github.com/NVIDIA/DLSS/releases/tag/v310.5.0)
+and [310.9.1 SDK](https://github.com/NVIDIA/DLSS/releases/tag/v310.9.1).
+
+Choose a mode under **RTX Remix Settings → Performance → DLSS**, or use:
+
+| Command | Selection for the next Minecraft launch |
+| --- | --- |
+| `/rtx dlss sr45` | DLSS 4.5 Super Resolution, preset M |
+| `/rtx dlss sr45-l` | DLSS 4.5 Super Resolution, preset L |
+| `/rtx dlss rr` | DLSS Ray Reconstruction, keeping its existing model preference |
+| `/rtx dlss remix` | Let Remix's native settings control DLSS (default) |
+
+Restart Minecraft after selecting a mode. Startup applies the choice before
+native device creation so Remix initializes the matching lighting and denoiser
+settings. `/rtx dlss` reports the runtime's resolved path and preset, followed
+by the selection for the next launch. This reports configuration; a driver
+override or a feature fallback can affect the model NGX ultimately executes.
+
+M is optimized for Performance and L for Ultra Performance. The selection
+preserves your DLSS quality mode; adjust that separately in Alt+X. The RTX 4070
+Laptop supports these SR models, whose GPU cost can differ from the older models.
+
+This runtime uses SR and Ray Reconstruction as alternative paths. **Sparse
+Rendering requires Ray Reconstruction**, so it is inactive in the 4.5 SR modes
+even if its checkbox remains checked. The mod keeps that preference intact;
+`/rtx dlss rr` and a restart restore the RR path. RR uses its own D/E/F models:
+an SR M/L hint cannot upgrade RR. Frame-generation settings are unchanged.
+
+The selection persists as `dlss.mode` in `config/rtxremix.json`. Explicit modes
+apply at each launch; **Remix Menu** makes no native writes and follows whatever
+the native menu has saved. It does not erase those saved settings. Existing
+installations default to **Remix Menu**, preserving their current behavior.
+Benchmark `RTXREMIX_EXTRA_RTXCONF` overrides are applied after this selection.

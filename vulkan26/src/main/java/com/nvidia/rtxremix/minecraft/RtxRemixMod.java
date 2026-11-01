@@ -19,6 +19,7 @@ import com.nvidia.rtxremix.minecraft.settings.RtxSettingsStore;
 import com.nvidia.rtxremix.minecraft.settings.RtxSettingsScreen;
 import com.nvidia.rtxremix.minecraft.settings.RtxSettingsFactory;
 import com.nvidia.rtxremix.minecraft.settings.RtxSettings;
+import com.nvidia.rtxremix.minecraft.settings.DlssSettings;
 import com.nvidia.rtxremix.minecraft.screen.CopperBeaconScreen;
 import com.nvidia.rtxremix.minecraft.profiling.WorldRendererProfilingAccess;
 import com.nvidia.rtxremix.minecraft.profiling.TracyGCListener;
@@ -166,6 +167,36 @@ public class RtxRemixMod implements ClientModInitializer {
         }
         preset.get().writeTo(renderer.getRemixApi()::setConfigVariable);
         return Component.literal("Remix graphics preset '" + name + "' applied for this session");
+    }
+
+    private static Component selectDlssMode(String mode) {
+        if (renderer == null || !renderer.isInitialized() || rtxSettings == null) {
+            return Component.translatable("rtxremix.renderer.unavailable");
+        }
+        if (!DlssSettings.MODES.contains(mode)) {
+            return Component.translatable("rtxremix.dlss.unknown", String.join(", ", DlssSettings.MODES));
+        }
+        var setting = renderer.getDlssSettings().setting();
+        setting.apply(mode);
+        saveRtxSettings();
+        return Component.translatable("rtxremix.dlss.selected",
+                Component.translatable(setting.choiceLabelKey(mode)));
+    }
+
+    private static Component dlssStatus() {
+        if (renderer == null || !renderer.isInitialized()) {
+            return Component.translatable("rtxremix.renderer.unavailable");
+        }
+        try {
+            var resolved = DlssSettings.readResolved(renderer.getRemixApi()::getConfigVariableResolved);
+            var setting = renderer.getDlssSettings().setting();
+            return Component.translatable("rtxremix.dlss.status",
+                    Component.translatable("rtxremix.dlss.path." + resolved.path()), resolved.preset(),
+                    Component.translatable(setting.choiceLabelKey(setting.get())));
+        } catch (RuntimeException e) {
+            LOGGER.warn("Could not read resolved DLSS options", e);
+            return Component.translatable("rtxremix.dlss.statusUnavailable");
+        }
     }
     
     // Requested master state. Capture also requires the published renderer to be
@@ -1055,6 +1086,21 @@ public class RtxRemixMod implements ClientModInitializer {
                         }
                         return 1;
                     }))
+                .then(ClientCommands.literal("dlss")
+                    .executes(context -> {
+                        context.getSource().sendFeedback(dlssStatus());
+                        return 1;
+                    })
+                    .then(ClientCommands.argument("mode", StringArgumentType.word())
+                        .suggests((context, builder) -> {
+                            DlssSettings.MODES.forEach(builder::suggest);
+                            return builder.buildFuture();
+                        })
+                        .executes(context -> {
+                            context.getSource().sendFeedback(selectDlssMode(
+                                    StringArgumentType.getString(context, "mode")));
+                            return 1;
+                        })))
                 .then(ClientCommands.literal("preset")
                     .executes(context -> {
                         context.getSource().sendFeedback(Component.literal(

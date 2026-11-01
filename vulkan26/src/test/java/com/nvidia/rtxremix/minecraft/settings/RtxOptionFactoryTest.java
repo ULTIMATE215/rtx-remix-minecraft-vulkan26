@@ -30,6 +30,8 @@ class RtxOptionFactoryTest {
                     0, 10, 5, () -> 5, v -> { });
             case FLOAT -> RtxSetting.ofFloat("t.float", SettingGroup.RENDER_DISTANCE, LABEL_KEY, "k.tip",
                     0.0, 1.0, 0.5, () -> 0.5, v -> { });
+            case CHOICE -> RtxSetting.ofChoice("t.choice", SettingGroup.DLSS, LABEL_KEY, "k.tip",
+                    List.of("first", "second"), "k.value.", "first", () -> "first", v -> { });
         };
     }
 

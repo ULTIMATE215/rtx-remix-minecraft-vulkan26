@@ -69,6 +69,7 @@ public final class RtxSettingsFactory {
         ChunkManager chunks = renderer.getChunkManager();
         RemixEntityPass entities = renderer.getEntityPass();
         PostProcessingSettings postProcessing = renderer.getPostProcessingSettings();
+        list.add(renderer.getDlssSettings().setting());
 
         // --- Render distances (live-bound to managers) ---
         list.add(RtxSetting.ofBool("dist.autoFade", SettingGroup.RENDER_DISTANCE,

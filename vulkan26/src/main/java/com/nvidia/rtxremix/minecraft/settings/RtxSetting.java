@@ -4,18 +4,19 @@
  */
 package com.nvidia.rtxremix.minecraft.settings;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * One curated, tweakable value. The getter reads live state and the applier
- * pushes a value to the live system. min/max are the slider/validation bounds
- * (0..1 unused for BOOL).
+ * One curated, tweakable value bound to its owning model. Most appliers update
+ * the live system; startup preferences take effect at the next initialization.
+ * min/max are slider/validation bounds, unused for BOOL and CHOICE.
  */
 public final class RtxSetting<T> {
 
-    public enum Kind { BOOL, INT, FLOAT }
+    public enum Kind { BOOL, INT, FLOAT, CHOICE }
 
     private final String id;
     private final SettingGroup group;
@@ -29,6 +30,8 @@ public final class RtxSetting<T> {
     private final Consumer<T> applier;
     private boolean applySliderValueImmediately = true;
     private int step = 1;
+    private List<String> choices = List.of();
+    private String choiceLabelPrefix;
 
     private RtxSetting(String id, SettingGroup group, String labelKey, String tooltipKey,
                        Kind kind, double min, double max, T defaultValue,
@@ -60,6 +63,21 @@ public final class RtxSetting<T> {
         return new RtxSetting<>(id, group, labelKey, tooltipKey, Kind.FLOAT, min, max, def, getter, applier);
     }
 
+    /** A cycle button persisted by stable id, independent of its displayed order or language. */
+    public static RtxSetting<String> ofChoice(String id, SettingGroup group, String labelKey,
+            String tooltipKey, List<String> choices, String choiceLabelPrefix, String def,
+            Supplier<String> getter, Consumer<String> applier) {
+        List<String> values = List.copyOf(choices);
+        if (!values.contains(def) || values.stream().distinct().count() != values.size()) {
+            throw new IllegalArgumentException("Invalid choices or default for " + id);
+        }
+        RtxSetting<String> setting = new RtxSetting<>(id, group, labelKey, tooltipKey,
+                Kind.CHOICE, 0, 0, def, getter, applier);
+        setting.choices = values;
+        setting.choiceLabelPrefix = Objects.requireNonNull(choiceLabelPrefix);
+        return setting;
+    }
+
     public String id() { return id; }
     public SettingGroup group() { return group; }
     public String labelKey() { return labelKey; }
@@ -69,6 +87,8 @@ public final class RtxSetting<T> {
     public double max() { return max; }
     public T defaultValue() { return defaultValue; }
     public boolean applySliderValueImmediately() { return applySliderValueImmediately; }
+    public List<String> choices() { return choices; }
+    public String choiceLabelKey(String value) { return choiceLabelPrefix + value; }
 
     /** The spacing between the values an INT setting takes; 1 unless {@link #withStep}. */
     public int step() { return step; }
@@ -101,6 +121,9 @@ public final class RtxSetting<T> {
     public T get() { return getter.get(); }
 
     public void apply(T value) {
+        if (kind == Kind.CHOICE && !choices.contains(value)) {
+            throw new IllegalArgumentException("Unknown choice '" + value + "' for " + id);
+        }
         applier.accept(onStep(value));
     }
 
