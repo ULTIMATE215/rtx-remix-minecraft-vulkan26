@@ -178,7 +178,7 @@
   "rtxremix.settings.value.dlss.quality.balanced": "均衡",
   "rtxremix.settings.value.dlss.quality.quality": "质量",
   "rtxremix.settings.value.dlss.quality.auto": "自动",
-  "rtxremix.settings.value.dlss.quality.dlaa": "原生抗锯齿",
+  "rtxremix.settings.value.dlss.quality.dlaa": "原生抗锯齿（DLAA）",
   "rtxremix.settings.value.frameGeneration.remix": "运行时默认",
   "rtxremix.settings.value.frameGeneration.off": "关闭",
   "rtxremix.settings.value.frameGeneration.on": "开启",

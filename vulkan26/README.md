@@ -126,7 +126,12 @@ quality, thickness, coverage, density, wind speed, height, and size are adjustab
 Minecraft's own Clouds setting must also be enabled.
 
 Clouds are composited with the same frame's scene depth after Remix reconstruction
-and before weather and the HUD. They use no temporal history and are independent
+and before weather and the HUD. Depth remains at the internal render resolution;
+a conservative foreground footprint protects reconstructed silhouettes from
+jittered depth misses. This can leave a narrow area without clouds next to an
+occluder. The headless GPU fixture covers full-, half-, and third-resolution depth
+with subpixel jitter; Windows rendering still needs visual validation.
+Clouds use no temporal history and are independent
 of Remix's circular geometry fade. The current volume covers the primary view;
 it does **not** contribute to native reflections or shadows on terrain. Disable
 Volumetric clouds to use the previous mesh clouds for those effects. Mesh clouds
@@ -139,9 +144,10 @@ assets is included.
 
 ## Diagnosing HUD trails
 
-The hotbar is drawn after world submission and Minecraft's post effects. Trails
-reported during movement still require Windows client evidence; the native
-presentation and frame-generation stages have not been ruled out.
+The hotbar is drawn after world submission and Minecraft's post effects. Windows
+client comparisons have reported clean captures before presentation, with on-screen
+trails reduced by disabling frame generation. This narrows that report to the native
+frame-generation/presentation path; it does not identify its exact defect.
 
 Run **`/rtx diagnoseui`**, close chat, and move the camera. After a two-second
 delay the mod records eight pairs of images, immediately before and after HUD
@@ -155,6 +161,11 @@ point to an earlier stage; clean pairs with visible on-screen trails narrow the
 problem to a later stage. A frame-generation comparison can be made under
 **Performance → DLSS → Frame gen (restart)** by applying Off and restarting.
 This diagnostic is not a HUD ghosting fix.
+
+Frame generation remains supported. The pinned 0.16.0 client interface has no
+separate HUD input for interpolation. The public dxvk-remix `main` checked at
+`9dd9b9398cdcb600fb387cc72c36a15c8d8680a1` exposes API 0.6.6 and lacks the pinned
+runtime's interop implementation, so it cannot be substituted to patch that path.
 
 ## DLSS 4.5
 

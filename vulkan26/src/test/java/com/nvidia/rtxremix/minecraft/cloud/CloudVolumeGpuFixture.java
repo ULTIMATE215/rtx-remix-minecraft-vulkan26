@@ -33,8 +33,15 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
     private HostBuffer upload, readback;
     private CloudVolumeResources resources;
     private boolean inputsInitialized;
+    private final int depthWidth, depthHeight;
 
     private CloudVolumeGpuFixture() {
+        this(WIDTH, HEIGHT);
+    }
+
+    private CloudVolumeGpuFixture(int depthWidth, int depthHeight) {
+        this.depthWidth = depthWidth;
+        this.depthHeight = depthHeight;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             var pointer = stack.mallocPointer(1);
             var application = VkApplicationInfo.calloc(stack).sType$Default().apiVersion(VK_API_VERSION_1_2)
@@ -78,9 +85,9 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
             commands = new VkCommandBuffer(pointer.get(0), device);
             check(vkCreateFence(device, VkFenceCreateInfo.calloc(stack).sType$Default(), null, handle));
             fence = handle.get(0);
-            color = new TestImage(VK_FORMAT_R32G32B32A32_SFLOAT);
-            depth = new TestImage(VK_FORMAT_R32_SFLOAT);
-            upload = new HostBuffer(WIDTH * HEIGHT * 20, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            color = new TestImage(VK_FORMAT_R32G32B32A32_SFLOAT, WIDTH, HEIGHT);
+            depth = new TestImage(VK_FORMAT_R32_SFLOAT, depthWidth, depthHeight);
+            upload = new HostBuffer(WIDTH * HEIGHT * 16 + depthWidth * depthHeight * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
             readback = new HostBuffer(WIDTH * HEIGHT * 8, VK_BUFFER_USAGE_TRANSFER_DST_BIT);
             resources = new CloudVolumeResources(device, allocator, VolumetricCloudRenderer.loadShader(), WIDTH, HEIGHT, color.view, depth.view);
         }
@@ -94,9 +101,43 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
             upload.mapped.putFloat(offset + 4, blocked ? 0.28f : 0.48f);
             upload.mapped.putFloat(offset + 8, blocked ? 0.12f : 0.76f);
             upload.mapped.putFloat(offset + 12, 1);
-            float projectedDepth = blocked ? (1000f - 50f / 48f) / 999.95f : 1;
-            upload.mapped.putFloat(WIDTH * HEIGHT * 16 + (y * WIDTH + x) * 4, projectedDepth);
         }
+        for (int y = 0; y < depthHeight; y++) for (int x = 0; x < depthWidth; x++) {
+            boolean blocked = occluder && x >= depthWidth / 3 && x < depthWidth / 2 && y >= depthHeight / 4;
+            putDepth(x, y, blocked);
+        }
+        return dispatch(parameters);
+    }
+
+    private void putDepth(int x, int y, boolean blocked) {
+        float projectedDepth = blocked ? (1000f - 50f / 48f) / 999.95f : 1;
+        upload.mapped.putFloat(WIDTH * HEIGHT * 16 + (y * depthWidth + x) * 4, projectedDepth);
+    }
+
+    /** A stable antialiased roof with subpixel jitter only in its render-resolution depth. */
+    private float[] renderSilhouette(ByteBuffer parameters, float jitterX, float jitterY) {
+        for (int y = 0; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
+            float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f);
+            int offset = (y * WIDTH + x) * 16;
+            upload.mapped.putFloat(offset, 0.24f + coverage * (0.20f - 0.24f));
+            upload.mapped.putFloat(offset + 4, 0.48f + coverage * (0.28f - 0.48f));
+            upload.mapped.putFloat(offset + 8, 0.76f + coverage * (0.12f - 0.76f));
+            upload.mapped.putFloat(offset + 12, 1);
+        }
+        for (int y = 0; y < depthHeight; y++) for (int x = 0; x < depthWidth; x++) {
+            float fullX = (x + 0.5f + jitterX) * WIDTH / depthWidth;
+            float fullY = (y + 0.5f + jitterY) * HEIGHT / depthHeight;
+            putDepth(x, y, silhouetteCoverage(fullX, fullY) >= 0.5f);
+        }
+        return dispatch(parameters);
+    }
+
+    private static float silhouetteCoverage(float x, float y) {
+        float edge = WIDTH * 0.40f + (y - HEIGHT * 0.5f) * 0.37f;
+        return Math.clamp(edge - x + 0.5f, 0f, 1f);
+    }
+
+    private float[] dispatch(ByteBuffer parameters) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             check(vkResetCommandBuffer(commands, 0));
             check(vkBeginCommandBuffer(commands, VkCommandBufferBeginInfo.calloc(stack).sType$Default()));
@@ -116,9 +157,11 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
             region.imageExtent().set(WIDTH, HEIGHT, 1);
             vkCmdCopyBufferToImage(commands, upload.buffer, color.image, VK_IMAGE_LAYOUT_GENERAL, region);
             region.bufferOffset((long) WIDTH * HEIGHT * 16);
+            region.imageExtent().set(depthWidth, depthHeight, 1);
             vkCmdCopyBufferToImage(commands, upload.buffer, depth.image, VK_IMAGE_LAYOUT_GENERAL, region);
             resources.record(commands, parameters);
             region.bufferOffset(0);
+            region.imageExtent().set(WIDTH, HEIGHT, 1);
             vkCmdCopyImageToBuffer(commands, resources.outputImage(), VK_IMAGE_LAYOUT_GENERAL, readback.buffer, region);
             CloudVolumeResources.barrier(commands, stack);
             check(vkEndCommandBuffer(commands));
@@ -204,16 +247,40 @@ public final class CloudVolumeGpuFixture implements AutoCloseable {
             save(output,"depth-occlusion",blocked);
             System.out.println("PASS: coverage, static repeat, horizon (" + horizon + " pixels), inside, above, camera translation and foreground occlusion");
         }
+        for (int divisor : new int[]{1, 2, 3}) try (var fixture = new CloudVolumeGpuFixture(WIDTH / divisor, HEIGHT / divisor)) {
+            for (float jitterY : new float[]{-0.49f, 0.49f}) for (float jitterX : new float[]{-0.49f, 0.49f}) {
+                float[] result = fixture.renderSilhouette(parameters(100, 64, 0, 0.75f), jitterX, jitterY);
+                save(output, "silhouette-" + divisor + "-" + jitterX + "-" + jitterY, result);
+                int cloudPixels = 0;
+                for (int y = HEIGHT / 2; y < HEIGHT; y++) for (int x = 0; x < WIDTH; x++) {
+                    int offset = (y * WIDTH + x) * 4;
+                    float coverage = silhouetteCoverage(x + 0.5f, y + 0.5f);
+                    float red = 0.24f + coverage * (0.20f - 0.24f);
+                    float green = 0.48f + coverage * (0.28f - 0.48f);
+                    float blue = 0.76f + coverage * (0.12f - 0.76f);
+                    float error = Math.abs(result[offset] - red) + Math.abs(result[offset + 1] - green)
+                            + Math.abs(result[offset + 2] - blue);
+                    if (coverage > 0 && error > 0.003f) {
+                        throw new AssertionError("Clouds changed reconstructed silhouette at " + x + "," + y
+                                + " with depth scale 1/" + divisor + " and jitter " + jitterX + "," + jitterY + ": " + error);
+                    }
+                    if (coverage == 0 && error > 0.03f) cloudPixels++;
+                }
+                if (cloudPixels < WIDTH * HEIGHT / 20) throw new AssertionError("Silhouette protection removed the sky clouds");
+            }
+            System.out.println("PASS: reconstructed silhouettes survive depth jitter at scale 1/" + divisor
+                    + "; sky clouds remain visible");
+        }
     }
 
     private final class TestImage implements AutoCloseable {
         long image, allocation, view;
-        TestImage(int format) {
+        TestImage(int format, int width, int height) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 var create = VkImageCreateInfo.calloc(stack).sType$Default().imageType(VK_IMAGE_TYPE_2D).format(format)
                         .mipLevels(1).arrayLayers(1).samples(VK_SAMPLE_COUNT_1_BIT).tiling(VK_IMAGE_TILING_OPTIMAL)
                         .usage(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-                create.extent().set(WIDTH,HEIGHT,1);
+                create.extent().set(width,height,1);
                 var handle = stack.mallocLong(1);
                 var pointer = stack.mallocPointer(1);
                 check(vmaCreateImage(allocator,create,VmaAllocationCreateInfo.calloc(stack).usage(VMA_MEMORY_USAGE_AUTO),handle,pointer,null));

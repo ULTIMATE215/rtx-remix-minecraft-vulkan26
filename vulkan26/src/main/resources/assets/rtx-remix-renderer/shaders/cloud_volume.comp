@@ -127,7 +127,16 @@ vec3 rayDirection(vec2 uv) {
 }
 float viewDepth(vec2 uv) {
     ivec2 size = textureSize(sceneDepth, 0);
-    float z = texelFetch(sceneDepth, clamp(ivec2(uv * vec2(size)), ivec2(0), size - 1), 0).r;
+    // Color has already been reconstructed at output resolution. Depth still follows
+    // the jittered render grid, so a nearest miss can lie inside a resolved silhouette.
+    // Cover the reconstruction footprint and its subpixel jitter with foreground depth.
+    ivec2 base = ivec2(floor(uv * vec2(size) - 0.5));
+    float z = 1.0;
+    for (int y = -1; y <= 2; y++) for (int x = -1; x <= 2; x++) {
+        ivec2 samplePixel = clamp(base + ivec2(x,y), ivec2(0), size - 1);
+        float sampleDepth = texelFetch(sceneDepth, samplePixel, 0).r;
+        if (!isnan(sampleDepth)) z = min(z, sampleDepth);
+    }
     if (z >= 0.999999 || isnan(z)) return MAX_DISTANCE;
     return NEAR_PLANE * FAR_PLANE / max(FAR_PLANE - z * (FAR_PLANE - NEAR_PLANE), 0.00001);
 }
